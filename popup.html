@@ -1,0 +1,124 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>LinkedIn JD Extractor</title>
+  <link rel="stylesheet" href="popup.css">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
+</head>
+<body>
+  <div class="container">
+    <header class="header">
+      <div class="logo">
+        <svg width="24" height="24" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+          <rect width="24" height="24" rx="4" fill="#0A66C2"/>
+          <path d="M8.5 17H6V10H8.5V17ZM7.25 9C6.56 9 6 8.44 6 7.75C6 7.06 6.56 6.5 7.25 6.5C7.94 6.5 8.5 7.06 8.5 7.75C8.5 8.44 7.94 9 7.25 9ZM18 17H15.5V13.5C15.5 12.67 14.83 12 14 12C13.17 12 12.5 12.67 12.5 13.5V17H10V10H12.5V11.13C13.07 10.42 13.97 10 15 10C16.66 10 18 11.34 18 13V17Z" fill="white"/>
+        </svg>
+        <h1>JD Extractor</h1>
+      </div>
+      <span class="badge">v1.0</span>
+    </header>
+
+    <div id="status-banner" class="status-banner hidden">
+      <span class="status-icon"></span>
+      <span class="status-text"></span>
+    </div>
+
+    <main class="content">
+      <div id="not-linkedin" class="message-box hidden">
+        <div class="message-icon">🔗</div>
+        <p>Navigate to a LinkedIn job page to extract job details.</p>
+      </div>
+
+      <div id="no-job" class="message-box hidden">
+        <div class="message-icon">📋</div>
+        <p>Open a job listing to see its details here.</p>
+      </div>
+
+      <div id="job-data" class="job-data hidden">
+        <section class="job-header">
+          <h2 id="job-title" class="job-title">-</h2>
+          <div class="job-meta">
+            <span id="company-name" class="company">-</span>
+            <span class="separator">•</span>
+            <span id="location" class="location">-</span>
+          </div>
+        </section>
+
+        <div class="info-grid">
+          <div class="info-card">
+            <span class="info-label">💰 Salary</span>
+            <span id="salary" class="info-value">-</span>
+          </div>
+          <div class="info-card">
+            <span class="info-label">🏢 Work Type</span>
+            <span id="work-type" class="info-value">-</span>
+          </div>
+          <div class="info-card">
+            <span class="info-label">⏰ Employment</span>
+            <span id="employment-type" class="info-value">-</span>
+          </div>
+          <div class="info-card">
+            <span class="info-label">📅 Posted</span>
+            <span id="posted-date" class="info-value">-</span>
+          </div>
+        </div>
+
+        <section class="description-section">
+          <h3>📝 Job Description</h3>
+          <div id="description" class="description-content">-</div>
+        </section>
+
+        <section class="skills-section hidden" id="skills-section">
+          <h3>🛠️ Skills</h3>
+          <div id="skills" class="skills-tags"></div>
+        </section>
+
+        <section class="benefits-section hidden" id="benefits-section">
+          <h3>🎁 Benefits</h3>
+          <div id="benefits" class="benefits-list"></div>
+        </section>
+
+        <div class="actions">
+          <button id="copy-btn" class="btn btn-primary">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <rect x="9" y="9" width="13" height="13" rx="2" ry="2"></rect>
+              <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path>
+            </svg>
+            Copy to Clipboard
+          </button>
+          <button id="download-btn" class="btn btn-secondary">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path>
+              <polyline points="7 10 12 15 17 10"></polyline>
+              <line x1="12" y1="15" x2="12" y2="3"></line>
+            </svg>
+            Download JSON
+          </button>
+        </div>
+      </div>
+
+      <div id="loading" class="loading hidden">
+        <div class="spinner"></div>
+        <p>Extracting job data...</p>
+      </div>
+    </main>
+
+    <footer class="footer">
+      <button id="refresh-btn" class="refresh-btn">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+          <polyline points="23 4 23 10 17 10"></polyline>
+          <path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"></path>
+        </svg>
+        Refresh
+      </button>
+    </footer>
+  </div>
+
+  <script src="popup.js"></script>
+</body>
+</html>
+
