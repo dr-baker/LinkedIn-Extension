@@ -1,4 +1,26 @@
+# macOS
 .DS_Store
+.AppleDouble
+.LSOverride
+
+# Node
 node_modules/
-*.zip
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+# Build output
 dist/
+build/
+*.zip
+*.crx
+
+# Test / example data (may contain personal info)
+example export/
+examples/
+
+# Editor
+.vscode/
+.idea/
+*.swp
+*.swo
