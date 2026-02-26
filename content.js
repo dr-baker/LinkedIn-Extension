@@ -14,6 +14,10 @@
       '.job-details-jobs-unified-top-card__container--two-pane',
       '.jobs-unified-top-card',
       '.jobs-search__job-details',
+      '.scaffold-layout__detail',
+      '.jobs-search-two-pane__detail',
+      '.jobs-search-two-pane__job-details',
+      '[class*="two-pane__detail"]',
       '[class*="jobs-details"]',
       '[class*="job-details"]'
     ],
@@ -520,18 +524,24 @@
       return { error: 'not_linkedin_jobs' };
     }
 
-    // Wait for content to load (helps with Arc browser and SPAs)
-    await waitForJobDetails();
+    // Wait for content to load — search-results page needs more time for the right panel
+    const isSearchResults = window.location.href.includes('search-results') || window.location.href.includes('currentJobId=');
+    await waitForJobDetails(isSearchResults ? 5000 : 3000);
 
     // Check for job detail panel
     const jobDetail = queryMultiple(SELECTORS.jobDetailContainer);
     if (!jobDetail) {
       // Try to detect if we're on a jobs list page without a selected job
+      // But if currentJobId is in the URL, a job IS selected — don't bail out
+      const hasCurrentJobId = window.location.href.includes('currentJobId=');
       const jobsList = document.querySelector('.jobs-search-results-list, .scaffold-layout__list, [class*="jobs-search-results"]');
-      if (jobsList) {
+      if (jobsList && !hasCurrentJobId) {
         return { error: 'no_job_selected' };
       }
-      return { error: 'no_job_data' };
+      if (!hasCurrentJobId) {
+        return { error: 'no_job_data' };
+      }
+      // currentJobId present but container not found yet — content may still be loading
     }
 
     // Extract all job data

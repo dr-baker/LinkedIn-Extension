@@ -1,0 +1,98 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Settings - LinkedIn JD Extractor</title>
+  <link rel="stylesheet" href="settings.css">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
+</head>
+<body>
+  <div class="container">
+    <header class="header">
+      <div class="logo">
+        <svg width="24" height="24" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+          <rect width="24" height="24" rx="4" fill="#0A66C2"/>
+          <path d="M8.5 17H6V10H8.5V17ZM7.25 9C6.56 9 6 8.44 6 7.75C6 7.06 6.56 6.5 7.25 6.5C7.94 6.5 8.5 7.06 8.5 7.75C8.5 8.44 7.94 9 7.25 9ZM18 17H15.5V13.5C15.5 12.67 14.83 12 14 12C13.17 12 12.5 12.67 12.5 13.5V17H10V10H12.5V11.13C13.07 10.42 13.97 10 15 10C16.66 10 18 11.34 18 13V17Z" fill="white"/>
+        </svg>
+        <h1>Settings</h1>
+      </div>
+      <a href="popup.html" class="back-btn">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+          <path d="M19 12H5M12 19l-7-7 7-7"/>
+        </svg>
+        Back
+      </a>
+    </header>
+
+    <main class="content">
+      <div id="status-banner" class="status-banner hidden">
+        <span class="status-icon"></span>
+        <span class="status-text"></span>
+      </div>
+
+      <section class="settings-section">
+        <h2 class="section-title">Automation</h2>
+        
+        <div class="setting-item">
+          <div class="setting-info">
+            <label class="setting-label" for="auto-copy-toggle">
+              Automatically copy JD on opening extension
+            </label>
+            <p class="setting-description">
+              When enabled, the job description will be automatically copied to your clipboard when you open the extension.
+            </p>
+          </div>
+          <label class="toggle">
+            <input type="checkbox" id="auto-copy-toggle">
+            <span class="toggle-slider"></span>
+          </label>
+        </div>
+
+        <div class="setting-item">
+          <div class="setting-info">
+            <label class="setting-label" for="auto-save-toggle">
+              Automatically save to file
+            </label>
+            <p class="setting-description">
+              When enabled, the job description will be automatically saved to a file when you open the extension.
+            </p>
+          </div>
+          <label class="toggle">
+            <input type="checkbox" id="auto-save-toggle">
+            <span class="toggle-slider"></span>
+          </label>
+        </div>
+      </section>
+
+      <section class="settings-section" id="save-options-section">
+        <h2 class="section-title">Save Options</h2>
+        
+        <div class="setting-item">
+          <label class="setting-label" for="file-format">File Format</label>
+          <select id="file-format" class="select-input">
+            <option value="text">Text (.txt)</option>
+            <option value="json">JSON (.json)</option>
+          </select>
+        </div>
+
+        <div class="setting-item">
+          <label class="setting-label" for="download-folder">Default Download Folder</label>
+          <div class="folder-input-group">
+            <input type="text" id="download-folder" class="folder-input" placeholder="Select a folder..." readonly>
+            <button id="select-folder-btn" class="btn btn-secondary">Browse</button>
+          </div>
+          <p class="setting-description">
+            Choose where to save job description files. If not set, files will be saved to your default Downloads folder.
+          </p>
+        </div>
+      </section>
+    </main>
+  </div>
+
+  <script src="settings.js"></script>
+</body>
+</html>
+
