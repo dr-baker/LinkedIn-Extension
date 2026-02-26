@@ -36,6 +36,14 @@
 
   // Current job data cache
   let currentJobData = null;
+  
+  // Settings cache
+  let settings = {
+    autoCopy: false,
+    autoSave: false,
+    fileFormat: 'text',
+    downloadFolder: ''
+  };
 
   /**
    * Show a specific view and hide others
@@ -138,6 +146,9 @@
     renderBenefits(data.benefits);
     
     showView('jobData');
+    
+    // Check settings and perform auto-actions
+    performAutoActions(data);
   }
 
   /**
@@ -206,6 +217,20 @@
   }
 
   /**
+   * Get filename with folder path prefix if set
+   */
+  function getFilename(extension) {
+    const baseName = `job-${(currentJobData.company || 'unknown').replace(/\s+/g, '-')}-${Date.now()}.${extension}`;
+    
+    if (settings.downloadFolder && settings.downloadFolder.trim()) {
+      const folder = settings.downloadFolder.trim().replace(/\/$/, ''); // Remove trailing slash
+      return `${folder}/${baseName}`;
+    }
+    
+    return baseName;
+  }
+
+  /**
    * Download job data as JSON file
    */
   function downloadAsJson() {
@@ -215,7 +240,7 @@
       type: 'application/json'
     });
     
-    const filename = `job-${(currentJobData.company || 'unknown').replace(/\s+/g, '-')}-${Date.now()}.json`;
+    const filename = getFilename('json');
     
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a');
@@ -225,6 +250,75 @@
     URL.revokeObjectURL(url);
     
     showStatus('Downloaded!', 'success');
+  }
+
+  /**
+   * Download job data as text file
+   */
+  function downloadAsText() {
+    if (!currentJobData) return;
+    
+    const text = formatJobDataAsText(currentJobData);
+    const blob = new Blob([text], {
+      type: 'text/plain'
+    });
+    
+    const filename = getFilename('txt');
+    
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = filename;
+    a.click();
+    URL.revokeObjectURL(url);
+    
+    showStatus('Downloaded!', 'success');
+  }
+
+  /**
+   * Save job data to file based on settings
+   */
+  async function saveJobDataToFile(data) {
+    if (settings.fileFormat === 'json') {
+      downloadAsJson();
+    } else {
+      downloadAsText();
+    }
+  }
+
+  /**
+   * Load settings from storage
+   */
+  async function loadSettings() {
+    try {
+      const result = await chrome.storage.sync.get(['settings']);
+      if (result.settings) {
+        settings = { ...settings, ...result.settings };
+      }
+    } catch (err) {
+      console.error('Failed to load settings:', err);
+    }
+  }
+
+  /**
+   * Perform auto-actions based on settings
+   */
+  async function performAutoActions(data) {
+    // Auto-copy if enabled
+    if (settings.autoCopy) {
+      try {
+        const text = formatJobDataAsText(data);
+        await navigator.clipboard.writeText(text);
+        showStatus('Auto-copied to clipboard!', 'success');
+      } catch (err) {
+        console.error('Failed to auto-copy:', err);
+      }
+    }
+
+    // Auto-save if enabled
+    if (settings.autoSave) {
+      await saveJobDataToFile(data);
+    }
   }
 
   /**
@@ -319,8 +413,9 @@
   /**
    * Initialize the popup
    */
-  function init() {
+  async function init() {
     initEventListeners();
+    await loadSettings();
     extractFromCurrentTab();
   }
 
