@@ -10,16 +10,15 @@
   const SELECTORS = {
     // Job detail panel (right side when viewing a job)
     jobDetailContainer: [
-      '.jobs-details',
-      '.job-details-jobs-unified-top-card__container--two-pane',
-      '.jobs-unified-top-card',
       '.jobs-search__job-details',
+      '.jobs-details',
+      '.job-view-layout.jobs-details',
+      '.job-details-jobs-unified-top-card__container--two-pane',
       '.scaffold-layout__detail',
       '.jobs-search-two-pane__detail',
       '.jobs-search-two-pane__job-details',
-      '[class*="two-pane__detail"]',
-      '[class*="jobs-details"]',
-      '[class*="job-details"]'
+      '[role="main"]',
+      '#workspace'
     ],
     
     // Job title - more comprehensive selectors
@@ -27,12 +26,8 @@
       '.job-details-jobs-unified-top-card__job-title h1',
       '.job-details-jobs-unified-top-card__job-title a',
       '.job-details-jobs-unified-top-card__job-title',
-      '.jobs-unified-top-card__job-title',
-      'h1[class*="job-title"]',
-      'h1[class*="job-details"]',
-      'h2[class*="job-title"]',
+      'a[href*="/jobs/view/"]',
       '.t-24.t-bold',
-      'a[class*="job-title"]',
       '.jobs-details-top-card__job-title',
       // Fallback: find h1/h2 in job details area
       '.jobs-search__job-details h1',
@@ -45,37 +40,34 @@
       '.job-details-jobs-unified-top-card__company-name',
       '.jobs-unified-top-card__company-name a',
       '.jobs-unified-top-card__company-name',
-      'a[class*="company-name"]',
-      '[class*="topcard"] a[href*="/company/"]',
+      'a[href*="/company/"][href*="/life/"]',
       '.jobs-details-top-card__company-url',
-      'a[data-tracking-control-name*="company"]',
       '.topcard__org-name-link'
     ],
     
     // Location
     location: [
+      '.job-details-jobs-unified-top-card__primary-description-container .tvm__text--low-emphasis',
       '.job-details-jobs-unified-top-card__primary-description-container .tvm__text',
       '.job-details-jobs-unified-top-card__primary-description-container span',
       '.jobs-unified-top-card__bullet',
       '.jobs-details-top-card__bullet',
-      '[class*="primary-description"] span',
       '.topcard__flavor--bullet'
     ],
     
     // Job description - expanded selectors
     description: [
+      '[data-testid="expandable-text-box"]',
       '.jobs-description__content',
       '.jobs-description-content__text',
       '.jobs-box__html-content',
       '#job-details',
       '.description__text',
-      '[class*="jobs-description"]',
       // "About the job" section container
       '.jobs-description',
       'article[class*="jobs-description"]',
       // Fallback: look for article or section with job content
-      '.jobs-search__job-details article',
-      '.jobs-search__job-details section'
+      '.jobs-search__job-details article'
     ],
     
     // Skills
@@ -95,17 +87,18 @@
     ]
   };
 
-  /**
-   * Query multiple selectors and return first match
-   */
-  function queryMultiple(selectors) {
+  let cachedJobDetailRoot = null;
+  let cachedJobDetailHref = '';
+
+  function queryMultipleIn(root, selectors) {
+    if (!root) return null;
     if (typeof selectors === 'string') {
-      return document.querySelector(selectors);
+      return root.querySelector(selectors);
     }
-    
+
     for (const selector of selectors) {
       try {
-        const element = document.querySelector(selector);
+        const element = root.querySelector(selector);
         if (element) {
           return element;
         }
@@ -116,17 +109,15 @@
     return null;
   }
 
-  /**
-   * Query all matching elements from multiple selectors
-   */
-  function queryAllMultiple(selectors) {
+  function queryAllMultipleIn(root, selectors) {
+    if (!root) return [];
     if (typeof selectors === 'string') {
-      return document.querySelectorAll(selectors);
+      return root.querySelectorAll(selectors);
     }
-    
+
     for (const selector of selectors) {
       try {
-        const elements = document.querySelectorAll(selector);
+        const elements = root.querySelectorAll(selector);
         if (elements.length > 0) {
           return elements;
         }
@@ -135,6 +126,35 @@
       }
     }
     return [];
+  }
+
+  function getJobDetailRoot(forceRefresh = false) {
+    if (
+      !forceRefresh &&
+      cachedJobDetailRoot &&
+      cachedJobDetailHref === window.location.href &&
+      document.contains(cachedJobDetailRoot)
+    ) {
+      return cachedJobDetailRoot;
+    }
+
+    cachedJobDetailRoot = queryMultipleIn(document, SELECTORS.jobDetailContainer);
+    cachedJobDetailHref = window.location.href;
+    return cachedJobDetailRoot || document;
+  }
+
+  /**
+   * Query multiple selectors and return first match
+   */
+  function queryMultiple(selectors, root = null) {
+    return queryMultipleIn(root || getJobDetailRoot(), selectors);
+  }
+
+  /**
+   * Query all matching elements from multiple selectors
+   */
+  function queryAllMultiple(selectors, root = null) {
+    return queryAllMultipleIn(root || getJobDetailRoot(), selectors);
   }
 
   /**
@@ -153,16 +173,93 @@
     return element ? cleanText(element.textContent) : '';
   }
 
+  function getTopCardText(root) {
+    const topCard = queryMultipleIn(root, [
+      '.job-details-jobs-unified-top-card',
+      '.jobs-unified-top-card',
+      '.job-details-jobs-unified-top-card__container--two-pane',
+      '[data-testid="lazy-column"]',
+      '[role="main"]'
+    ]);
+    if (!topCard) return '';
+    return cleanText(topCard.textContent || '');
+  }
+
+  function getMainText(root) {
+    const main = queryMultipleIn(root || document, [
+      '[role="main"]',
+      '#workspace',
+      '[data-testid="lazy-column"]',
+      'main'
+    ]);
+    return cleanText((main && (main.innerText || main.textContent)) || '');
+  }
+
+  function parseTitleCompanyFromDocumentTitle() {
+    const raw = cleanText(document.title || '');
+    if (!raw) return { title: '', company: '' };
+    const parts = raw.split('|').map((part) => cleanText(part)).filter(Boolean);
+    if (parts.length >= 2) {
+      return {
+        title: parts[0] || '',
+        company: parts[1] === 'LinkedIn' ? '' : (parts[1] || '')
+      };
+    }
+    return { title: '', company: '' };
+  }
+
+  function extractCompanyFromLinks(root) {
+    const links = root.querySelectorAll('a[href*="/company/"]');
+    for (const link of links) {
+      const text = cleanText(link.textContent || '');
+      if (!text) continue;
+      if (text.toLowerCase().includes('followers')) continue;
+      if (text.length > 2 && text.length < 100) return text;
+    }
+    return '';
+  }
+
+  function extractLocationFromText(text) {
+    if (!text) return '';
+    const patterns = [
+      /([A-Za-z .'-]+,\s*[A-Z]{2})(?:\s*\((?:Remote|Hybrid|On-site|Onsite)\))?/,
+      /([A-Za-z .'-]+,\s*[A-Za-z .'-]+)(?:\s*\((?:Remote|Hybrid|On-site|Onsite)\))?/
+    ];
+    for (const pattern of patterns) {
+      const match = text.match(pattern);
+      if (match && match[1]) return cleanText(match[1]);
+    }
+    return '';
+  }
+
+  function extractLocationFromMetaLine(root) {
+    const candidates = root.querySelectorAll('span, div, p, li');
+    const agoPattern = /\d+\s*(day|week|month|hour|minute)s?\s*ago/i;
+    const locationPattern = /^([A-Za-z.'-]+(?:\s+[A-Za-z.'-]+){0,4},\s*[A-Z]{2})(?:\s*\((?:Remote|Hybrid|On-site|Onsite)\))?$/;
+
+    for (const node of candidates) {
+      const text = cleanText(node.textContent || '');
+      if (!text || text.length > 180) continue;
+      if (!text.includes('·') || !agoPattern.test(text)) continue;
+
+      const head = cleanText(text.split('·')[0] || '');
+      const match = head.match(locationPattern);
+      if (match && match[1]) return cleanText(match[1]);
+    }
+    return '';
+  }
+
   /**
    * Extract salary information from pill buttons/insights
    * Targets the strong element inside buttons that contains the salary range
    */
   function extractSalary() {
+    const root = getJobDetailRoot();
     // Pattern to match salary ranges like "$118K/yr - $174K/yr" or "$255K/yr - $405K/yr"
-    const salaryPattern = /\$\d{1,3}(?:,\d{3})*(?:K)?\/yr\s*[-–]\s*\$\d{1,3}(?:,\d{3})*(?:K)?\/yr/i;
+    const salaryPattern = /\$\d{1,3}(?:,\d{3})*(?:\.\d+)?(?:K)?(?:\s*\/\s*(?:yr|year|hr|hour))?\s*(?:-|–|—|to)\s*\$?\d{1,3}(?:,\d{3})*(?:\.\d+)?(?:K)?(?:\s*\/\s*(?:yr|year|hr|hour))?(?:\s*USD)?/i;
     
     // First, try to find the strong element directly (most specific)
-    const strongElements = document.querySelectorAll('[class*="unified-top-card"] strong, [class*="job-insight"] strong');
+    const strongElements = root.querySelectorAll('.job-details-jobs-unified-top-card__job-insight strong, .job-details-jobs-unified-top-card strong');
     for (const el of strongElements) {
       const text = el.textContent || '';
       const match = text.match(salaryPattern);
@@ -172,13 +269,19 @@
     }
     
     // Fallback: look for buttons containing salary
-    const buttons = document.querySelectorAll('[class*="unified-top-card"] button, [class*="job-insight"] button');
+    const buttons = root.querySelectorAll('.job-details-jobs-unified-top-card button, .job-details-jobs-unified-top-card__job-insight button');
     for (const el of buttons) {
       const text = el.textContent || '';
       const match = text.match(salaryPattern);
       if (match) {
         return cleanText(match[0]);
       }
+    }
+
+    const topCardText = getTopCardText(root);
+    const topCardMatch = topCardText.match(salaryPattern);
+    if (topCardMatch) {
+      return cleanText(topCardMatch[0]);
     }
     
     return '';
@@ -188,18 +291,18 @@
    * Extract work type (Remote, Hybrid, On-site)
    */
   function extractWorkType() {
+    const root = getJobDetailRoot();
     // Look in pill buttons first
     const pillSelectors = [
-      '[class*="job-insight"] button',
-      '[class*="job-insight"] span',
-      '.ui-label',
-      '[class*="unified-top-card"] button',
-      '[class*="workplace-type"]'
+      '.job-details-jobs-unified-top-card__job-insight',
+      '.job-details-jobs-unified-top-card__job-insight-view-model-secondary',
+      '.job-details-jobs-unified-top-card__primary-description-container',
+      '.ui-label'
     ];
     
     for (const selector of pillSelectors) {
       try {
-        const elements = document.querySelectorAll(selector);
+        const elements = root.querySelectorAll(selector);
         for (const el of elements) {
           const text = (el.textContent || '').toLowerCase();
           if (text.includes('remote')) return 'Remote';
@@ -210,13 +313,18 @@
     }
     
     // Check in the primary description area
-    const descContainers = document.querySelectorAll('[class*="primary-description"], [class*="job-insight"]');
+    const descContainers = root.querySelectorAll('.job-details-jobs-unified-top-card__primary-description-container, .job-details-jobs-unified-top-card__job-insight');
     for (const container of descContainers) {
       const text = (container.textContent || '').toLowerCase();
       if (text.includes('remote')) return 'Remote';
       if (text.includes('hybrid')) return 'Hybrid';
       if (text.includes('on-site') || text.includes('onsite')) return 'On-site';
     }
+
+    const topCardText = getTopCardText(root).toLowerCase();
+    if (topCardText.includes(' remote')) return 'Remote';
+    if (topCardText.includes(' hybrid')) return 'Hybrid';
+    if (topCardText.includes('on-site') || topCardText.includes(' onsite')) return 'On-site';
     
     return '';
   }
@@ -225,16 +333,18 @@
    * Extract employment type (Full-time, Part-time, Contract, etc.)
    */
   function extractEmploymentType() {
+    const root = getJobDetailRoot();
     const pillSelectors = [
-      '[class*="job-insight"] button',
-      '[class*="job-insight"] span',
+      '.job-details-jobs-unified-top-card__job-insight',
+      '.job-details-jobs-unified-top-card__job-insight-view-model-secondary',
+      '.job-details-jobs-unified-top-card__primary-description-container',
       '.ui-label',
-      '[class*="unified-top-card"] button'
+      '.job-details-jobs-unified-top-card button'
     ];
     
     for (const selector of pillSelectors) {
       try {
-        const elements = document.querySelectorAll(selector);
+        const elements = root.querySelectorAll(selector);
         for (const el of elements) {
           const text = (el.textContent || '').toLowerCase();
           if (text.includes('full-time') || text.includes('full time')) return 'Full-time';
@@ -245,6 +355,13 @@
         }
       } catch (e) {}
     }
+
+    const topCardText = getTopCardText(root).toLowerCase();
+    if (topCardText.includes('full-time') || topCardText.includes('full time')) return 'Full-time';
+    if (topCardText.includes('part-time') || topCardText.includes('part time')) return 'Part-time';
+    if (topCardText.includes('contract')) return 'Contract';
+    if (topCardText.includes('internship')) return 'Internship';
+    if (topCardText.includes('temporary')) return 'Temporary';
     
     return '';
   }
@@ -253,6 +370,7 @@
    * Extract posted date
    */
   function extractPostedDate() {
+    const root = getJobDetailRoot();
     const selectors = [
       '.job-details-jobs-unified-top-card__primary-description-container .tvm__text--neutral',
       '.jobs-unified-top-card__posted-date',
@@ -263,7 +381,7 @@
     
     for (const selector of selectors) {
       try {
-        const elements = document.querySelectorAll(selector);
+        const elements = root.querySelectorAll(selector);
         for (const el of elements) {
           const text = el.textContent || '';
           // Look for time patterns like "1 week ago", "Reposted 2 days ago", etc.
@@ -276,7 +394,7 @@
     }
     
     // Search in the primary description
-    const primaryDesc = document.querySelector('[class*="primary-description"]');
+    const primaryDesc = root.querySelector('.job-details-jobs-unified-top-card__primary-description-container');
     if (primaryDesc) {
       const text = primaryDesc.textContent || '';
       const match = text.match(/(?:posted|reposted)?\s*\d+\s*(?:day|week|month|hour|minute)s?\s*ago/i);
@@ -284,6 +402,10 @@
         return cleanText(match[0]);
       }
     }
+
+    const mainText = getMainText(root);
+    const genericMatch = mainText.match(/(?:posted on [a-z]+\s+\d{1,2},\s+\d{4}(?:,\s+\d{1,2}:\d{2}\s*[ap]m)?|\d+\s*(?:day|week|month|hour|minute)s?\s*ago)/i);
+    if (genericMatch) return cleanText(genericMatch[0]);
     
     return '';
   }
@@ -292,8 +414,10 @@
    * Extract number of applicants
    */
   function extractApplicants() {
+    const root = getJobDetailRoot();
     const selectors = [
       '.jobs-unified-top-card__applicant-count',
+      '.job-details-jobs-unified-top-card__primary-description-container .tvm__text--low-emphasis',
       '.tvm__text--positive',
       '.num-applicants__caption',
       '[class*="applicant"]'
@@ -301,7 +425,7 @@
     
     for (const selector of selectors) {
       try {
-        const el = document.querySelector(selector);
+        const el = root.querySelector(selector);
         if (el) {
           const text = el.textContent || '';
           if (text.match(/\d+.*applicant/i) || text.match(/over\s+\d+/i)) {
@@ -312,7 +436,7 @@
     }
     
     // Search for applicant patterns in the page
-    const allElements = document.querySelectorAll('span, div, p');
+    const allElements = root.querySelectorAll('span, div, p');
     for (const el of allElements) {
       const text = el.textContent || '';
       if (text.match(/\d+\s*applicant/i) || text.match(/over\s+\d+.*clicked\s+apply/i)) {
@@ -327,12 +451,13 @@
    * Extract job description text with multiple fallback strategies
    */
   function extractDescription() {
+    const root = getJobDetailRoot();
     // Strategy 1: Standard selectors
-    let descEl = queryMultiple(SELECTORS.description);
+    let descEl = queryMultiple(SELECTORS.description, root);
     
     // Strategy 2: Look for "About the job" section
     if (!descEl) {
-      const headings = document.querySelectorAll('h2, h3, h4, [class*="heading"]');
+      const headings = root.querySelectorAll('h2, h3, h4, [class*="heading"]');
       for (const heading of headings) {
         if (heading.textContent && heading.textContent.toLowerCase().includes('about the job')) {
           // Get the next sibling or parent's content
@@ -353,7 +478,7 @@
     
     // Strategy 3: Look for the main article/section with job content
     if (!descEl) {
-      const articles = document.querySelectorAll('article, [role="article"], section');
+      const articles = root.querySelectorAll('article, [role="article"], section');
       for (const article of articles) {
         const text = article.textContent || '';
         // Check if it has substantial content and job-related keywords
@@ -370,7 +495,7 @@
     
     // Strategy 4: Find the largest text block in the job details area
     if (!descEl) {
-      const jobDetailsArea = document.querySelector('[class*="jobs-details"], [class*="job-details"], .jobs-search__job-details');
+      const jobDetailsArea = root;
       if (jobDetailsArea) {
         const textBlocks = jobDetailsArea.querySelectorAll('div, section, article');
         let largestBlock = null;
@@ -412,10 +537,11 @@
    * Extract skills from the job page
    */
   function extractSkills() {
+    const root = getJobDetailRoot();
     const skills = [];
     
     // Try various skill selectors
-    const skillElements = queryAllMultiple(SELECTORS.skills);
+    const skillElements = queryAllMultiple(SELECTORS.skills, root);
     for (const el of skillElements) {
       const skill = cleanText(el.textContent);
       if (skill && !skills.includes(skill) && skill.length < 50) {
@@ -424,7 +550,7 @@
     }
     
     // Also look for skills in the "Skills" section
-    const skillsSections = document.querySelectorAll('[class*="skill-match"] span, [class*="skills-item"]');
+    const skillsSections = root.querySelectorAll('[class*="skill-match"] span, [class*="skills-item"]');
     for (const el of skillsSections) {
       const skill = cleanText(el.textContent);
       if (skill && !skills.includes(skill) && skill.length < 50) {
@@ -439,6 +565,7 @@
    * Extract benefits
    */
   function extractBenefits() {
+    const root = getJobDetailRoot();
     const benefits = [];
     
     // Look in job insight containers
@@ -451,7 +578,7 @@
     
     for (const selector of insightSelectors) {
       try {
-        const elements = document.querySelectorAll(selector);
+        const elements = root.querySelectorAll(selector);
         for (const el of elements) {
           const text = cleanText(el.textContent);
           // Check for benefit-related keywords
@@ -490,11 +617,12 @@
       const startTime = Date.now();
       
       const check = () => {
+        const detailRoot = getJobDetailRoot(true);
         // Check if job details are loaded
-        const hasTitle = queryMultiple(SELECTORS.jobTitle);
-        const hasDescription = queryMultiple(SELECTORS.description);
+        const hasTitle = queryMultipleIn(detailRoot, SELECTORS.jobTitle);
+        const hasDescription = queryMultipleIn(detailRoot, SELECTORS.description);
         
-        if (hasTitle || hasDescription) {
+        if (detailRoot !== document || hasTitle || hasDescription) {
           resolve(true);
           return;
         }
@@ -529,7 +657,7 @@
     await waitForJobDetails(isSearchResults ? 5000 : 3000);
 
     // Check for job detail panel
-    const jobDetail = queryMultiple(SELECTORS.jobDetailContainer);
+    const jobDetail = queryMultipleIn(document, SELECTORS.jobDetailContainer);
     if (!jobDetail) {
       // Try to detect if we're on a jobs list page without a selected job
       // But if currentJobId is in the URL, a job IS selected — don't bail out
@@ -561,6 +689,21 @@
       url: extractJobUrl(),
       extractedAt: new Date().toISOString()
     };
+
+    // Fallbacks for LinkedIn's newer jobs UI with obfuscated classes.
+    const detailRoot = getJobDetailRoot();
+    const titleCompanyFromDocTitle = parseTitleCompanyFromDocumentTitle();
+    if (!jobData.title) {
+      const viewLink = detailRoot.querySelector('a[href*="/jobs/view/"]');
+      const viewLinkText = viewLink ? cleanText(viewLink.textContent || '') : '';
+      jobData.title = viewLinkText || titleCompanyFromDocTitle.title || '';
+    }
+    if (!jobData.company) {
+      jobData.company = extractCompanyFromLinks(detailRoot) || titleCompanyFromDocTitle.company || '';
+    }
+    if (!jobData.location) {
+      jobData.location = extractLocationFromMetaLine(detailRoot) || extractLocationFromText(getMainText(detailRoot));
+    }
 
     // Validate that we have at least a title or company
     if (!jobData.title && !jobData.company) {
@@ -604,7 +747,8 @@
       testSelectors: () => {
         console.log('Testing selectors...');
         for (const [name, sels] of Object.entries(SELECTORS)) {
-          const found = queryMultiple(sels);
+          const root = name === 'jobDetailContainer' ? document : getJobDetailRoot();
+          const found = queryMultipleIn(root, sels);
           console.log(`${name}: ${found ? '✓ Found' : '✗ Not found'}`);
         }
       }

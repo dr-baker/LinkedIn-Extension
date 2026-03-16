@@ -1,18 +1,10 @@
 # LinkedIn JD Extractor
 
-A Chrome browser extension that extracts job description information from LinkedIn job pages.
-
-## Features
-
-- 📋 **Extract Job Details**: Title, company, location, salary, work type, and more
-- 📝 **Full Description**: Captures the complete job description text
-- 🛠️ **Skills & Benefits**: Extracts required skills and listed benefits
-- 📋 **Copy to Clipboard**: One-click copy of formatted job details
-- 💾 **Download JSON**: Export job data as a JSON file for further processing
+A chrome extension to scrape information from a LinkedIn job post.
+It's useful for bookkeeping, and theoretically for human-in-the-loop automation.
+It breaks sometimes due to obfuscation.
 
 ## Installation
-
-### Developer Mode (Recommended for Testing)
 
 1. Open Chrome and navigate to `chrome://extensions/`
 2. Enable **Developer mode** (toggle in top-right corner)
@@ -45,21 +37,33 @@ The extension extracts the following information when available:
 | **Skills** | Required/preferred skills |
 | **Benefits** | Listed benefits (401k, health, etc.) |
 
-## File Structure
-
-```
-LinkedIn Extension/
-├── manifest.json      # Extension configuration
-├── popup.html         # Popup UI markup
-├── popup.css          # Popup styling
-├── popup.js           # Popup logic
-├── content.js         # Page content extraction
-├── content-styles.css # Content script styles
-├── icons/             # Extension icons (SVG)
-└── README.md          # This file
-```
 
 ## Development
+
+### Authenticated LinkedIn DOM Exploration (Playwright)
+
+This repo includes local tooling so you can log into LinkedIn once, then run authenticated DOM probes without sharing credentials.
+
+1. Install dependencies:
+   ```bash
+   npm install
+   ```
+2. Capture LinkedIn auth state (opens a visible browser):
+   ```bash
+   npm run auth:linkedin
+   ```
+   - Log in manually in the opened browser window.
+   - The script detects a valid session and saves it to `.auth/linkedin-storage.json`.
+3. Probe an authenticated LinkedIn page and export DOM + selector stats:
+   ```bash
+   npm run probe:linkedin -- --url "https://www.linkedin.com/jobs/search/" --wait-ms 8000
+   ```
+
+Probe output is written to `debug/linkedin-dom/<timestamp>/`:
+- `dom.html`: Full HTML snapshot
+- `page.png`: Full-page screenshot
+- `selector-stats.json`: Per-selector match counts and query timing
+- `summary.json`: Best candidate selector per extraction group
 
 ### Updating Selectors
 
@@ -75,32 +79,6 @@ LinkedIn's HTML structure may change over time. If extraction stops working:
 - Open popup DevTools: Right-click extension icon → Inspect popup
 - Console logs from content script: Open DevTools on the LinkedIn page
 - Access extractor directly: `window.__linkedinJDExtractor.extract()` in console
-
-## Troubleshooting
-
-### Extension doesn't extract data in Arc Browser
-
-Arc browser may have timing issues with content script injection. Try these solutions:
-
-1. **Wait for page to fully load**: Give the page a few seconds to fully render before clicking the extension
-2. **Refresh and retry**: Click the Refresh button in the extension popup
-3. **Check permissions**: Go to `arc://extensions` → LinkedIn JD Extractor → Ensure "Site access" is set to "On all sites" or at least "On www.linkedin.com"
-4. **Disable Arc Boosts**: Some Arc Boosts may interfere with LinkedIn's page structure
-
-### Salary not parsing correctly
-
-The extension looks for salary patterns like `$XXX,XXX/yr` or `$XXXK`. If salary isn't extracted:
-
-1. Open DevTools Console (F12 or Cmd+Option+I)
-2. Run: `window.__linkedinJDExtractor.debug.findSalary()`
-3. This will show what salary data (if any) was found
-
-### Job description not found
-
-1. Ensure you've clicked on a specific job listing (not just the search results page)
-2. Wait for the job details panel to load on the right side
-3. Open DevTools Console and run: `window.__linkedinJDExtractor.debug.testSelectors()`
-4. This will show which selectors are finding elements
 
 ### Debugging
 
@@ -126,8 +104,3 @@ window.__linkedinJDExtractor.debug.findCompany()
 - Some fields may not be available for all job listings
 - LinkedIn's structure may change; selectors may need updates
 - Arc browser users may need to manually trigger extraction after page load
-
-## License
-
-MIT License - Feel free to modify and distribute.
-

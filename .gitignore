@@ -15,6 +15,10 @@ build/
 *.zip
 *.crx
 
+# Local authenticated inspection artifacts
+.auth/
+debug/linkedin-dom/
+
 # Test / example data (may contain personal info)
 example export/
 examples/

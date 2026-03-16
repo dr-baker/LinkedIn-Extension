@@ -1,0 +1,14 @@
+{
+  "name": "linkedin-jd-extractor",
+  "version": "1.0.0",
+  "private": true,
+  "description": "LinkedIn JD Extractor extension and local DOM inspection tooling",
+  "scripts": {
+    "build": "bash package.sh",
+    "auth:linkedin": "node scripts/linkedin-auth-login.mjs",
+    "probe:linkedin": "node scripts/linkedin-dom-probe.mjs"
+  },
+  "devDependencies": {
+    "playwright": "^1.54.2"
+  }
+}
