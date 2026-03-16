@@ -36,8 +36,11 @@ sync-version:
 	'
 
 build-unpacked:
+	rm -rf "$(UNPACKED_DIR)"
 	mkdir -p "$(UNPACKED_DIR)"
 	cp -R $(EXTENSION_FILES) "$(UNPACKED_DIR)"
+	mkdir -p "$(UNPACKED_DIR)/icons"
+	cp icons/icon16.png icons/icon32.png icons/icon48.png icons/icon128.png "$(UNPACKED_DIR)/icons/"
 
 build-zip:
 	mkdir -p "$(BUILD_DIR)"
