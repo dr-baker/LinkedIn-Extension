@@ -6,11 +6,35 @@ It breaks sometimes due to obfuscation.
 
 ## Installation
 
-1. Open Chrome and navigate to `chrome://extensions/`
-2. Enable **Developer mode** (toggle in top-right corner)
-3. Click **Load unpacked**
-4. Select this extension folder (`LinkedIn Extension`)
-5. The extension icon will appear in your browser toolbar
+If you already have a built release zip:
+
+1. Download `LinkedIn-JD-Extractor-<version>.zip`
+2. Unzip it anywhere on disk
+3. Open Chrome and navigate to `chrome://extensions/`
+4. Enable **Developer mode** (toggle in the top-right corner)
+5. Click **Load unpacked**
+6. Select the unzipped folder
+7. The extension icon will appear in your browser toolbar
+
+## Build
+
+Use `make build`.
+
+It creates:
+- `build/unpacked/` for **Load unpacked**
+- `build/LinkedIn-JD-Extractor-<version>.zip` for upload/distribution
+- `build/version.json` with the built artifact metadata
+
+## Release
+
+Use the same build path for every release:
+
+1. Run `make build`
+2. Create a GitHub release for the current version tag
+3. Upload `build/LinkedIn-JD-Extractor-<version>.zip` as the release asset
+4. Tell users to download that zip, unzip it, and load the extracted folder via `chrome://extensions`
+
+Do not ship the raw repository. The release zip is the distribution artifact.
 
 ### Usage
 
@@ -42,7 +66,9 @@ The extension extracts the following information when available:
 
 ### Authenticated LinkedIn DOM Exploration (Playwright)
 
-This repo includes local tooling so you can log into LinkedIn once, then run authenticated DOM probes without sharing credentials.
+This is optional developer tooling. It is not required to build, package, or install the extension.
+
+These scripts let you log into LinkedIn once, then run authenticated DOM probes without sharing credentials.
 
 1. Install dependencies:
    ```bash
@@ -54,10 +80,12 @@ This repo includes local tooling so you can log into LinkedIn once, then run aut
    ```
    - Log in manually in the opened browser window.
    - The script detects a valid session and saves it to `.auth/linkedin-storage.json`.
+   - Treat `.auth/linkedin-storage.json` as sensitive. It can contain active LinkedIn session cookies.
 3. Probe an authenticated LinkedIn page and export DOM + selector stats:
    ```bash
    npm run probe:linkedin -- --url "https://www.linkedin.com/jobs/search/" --wait-ms 8000
    ```
+   - Treat probe output as sensitive. `dom.html`, screenshots, and selector summaries can capture private account data, job content, and session-adjacent page state.
 
 Probe output is written to `debug/linkedin-dom/<timestamp>/`:
 - `dom.html`: Full HTML snapshot
@@ -104,3 +132,4 @@ window.__linkedinJDExtractor.debug.findCompany()
 - Some fields may not be available for all job listings
 - LinkedIn's structure may change; selectors may need updates
 - Arc browser users may need to manually trigger extraction after page load
+- `.auth/` and `debug/linkedin-dom/` are gitignored local artifacts and should not be shared casually
