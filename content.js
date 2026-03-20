@@ -165,6 +165,27 @@
     return text.replace(/\s+/g, ' ').trim();
   }
 
+  function extractApplicantsValue(text) {
+    const cleaned = cleanText(text);
+    if (!cleaned) return '';
+    if (cleaned.length > 140) return '';
+    if (/\b(?:be an early applicant|top applicant)\b/i.test(cleaned)) return '';
+
+    const patterns = [
+      /\b(?:over\s+)?\d[\d,]*(?:\+)?\s+applicants?\b/i,
+      /\b(?:over\s+)?\d[\d,]*(?:\+)?\s+people clicked apply\b/i
+    ];
+
+    for (const pattern of patterns) {
+      const match = cleaned.match(pattern);
+      if (match) {
+        return cleanText(match[0]);
+      }
+    }
+
+    return '';
+  }
+
   /**
    * Extract text content from element
    */
@@ -417,30 +438,36 @@
     const root = getJobDetailRoot();
     const selectors = [
       '.jobs-unified-top-card__applicant-count',
-      '.job-details-jobs-unified-top-card__primary-description-container .tvm__text--low-emphasis',
-      '.tvm__text--positive',
       '.num-applicants__caption',
-      '[class*="applicant"]'
+      '[class*="applicant-count"]',
+      '[class*="num-applicants"]',
+      '.job-details-jobs-unified-top-card__primary-description-container .tvm__text--low-emphasis',
+      '.job-details-jobs-unified-top-card__tertiary-description-container .tvm__text--low-emphasis',
+      '.job-details-jobs-unified-top-card__primary-description-container',
+      '.job-details-jobs-unified-top-card__tertiary-description-container'
     ];
     
     for (const selector of selectors) {
       try {
-        const el = root.querySelector(selector);
-        if (el) {
-          const text = el.textContent || '';
-          if (text.match(/\d+.*applicant/i) || text.match(/over\s+\d+/i)) {
-            return cleanText(text);
+        const elements = root.querySelectorAll(selector);
+        for (const el of elements) {
+          const match = extractApplicantsValue(el.textContent || '');
+          if (match) {
+            return match;
           }
         }
       } catch (e) {}
     }
     
-    // Search for applicant patterns in the page
-    const allElements = root.querySelectorAll('span, div, p');
+    // Fallback: only inspect short leaf-ish text nodes to avoid scraping the whole page.
+    const allElements = root.querySelectorAll('span, p, li, div');
     for (const el of allElements) {
-      const text = el.textContent || '';
-      if (text.match(/\d+\s*applicant/i) || text.match(/over\s+\d+.*clicked\s+apply/i)) {
-        return cleanText(text);
+      const childCount = el.children ? el.children.length : 0;
+      if (childCount > 2) continue;
+
+      const match = extractApplicantsValue(el.textContent || '');
+      if (match) {
+        return match;
       }
     }
     
