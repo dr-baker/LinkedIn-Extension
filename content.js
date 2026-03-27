@@ -89,6 +89,19 @@
 
   let cachedJobDetailRoot = null;
   let cachedJobDetailHref = '';
+  const JOB_CARD_WRAPPER_SELECTOR = '.scaffold-layout__list-item';
+  const JOB_CARD_SELECTOR = '.job-card-container, .job-card-list, [class*="job-card-container"]';
+  const PROMOTED_JOBS_MODES = new Set(['off', 'highlight', 'hide']);
+  const defaultSettings = {
+    autoCopy: false,
+    autoSave: false,
+    fileFormat: 'text',
+    downloadFolder: '',
+    promotedJobsMode: 'highlight'
+  };
+  let currentSettings = { ...defaultSettings };
+  let jobCardObserver = null;
+  let jobCardScanQueued = false;
 
   function queryMultipleIn(root, selectors) {
     if (!root) return null;
@@ -163,6 +176,167 @@
   function cleanText(text) {
     if (!text) return '';
     return text.replace(/\s+/g, ' ').trim();
+  }
+
+  function normalizePromotedJobsMode(value) {
+    return PROMOTED_JOBS_MODES.has(value) ? value : defaultSettings.promotedJobsMode;
+  }
+
+  function getCardWrapper(card) {
+    if (!card) return null;
+    return card.closest(JOB_CARD_WRAPPER_SELECTOR) || card;
+  }
+
+  function getJobCards() {
+    const wrappers = Array.from(document.querySelectorAll(JOB_CARD_WRAPPER_SELECTOR));
+    return wrappers
+      .map(wrapper => wrapper.querySelector(JOB_CARD_SELECTOR))
+      .filter(Boolean)
+      .filter(card => {
+        const text = cleanText(card.textContent || '');
+        return Boolean(text) && /\/jobs\/view\//.test(card.innerHTML);
+      });
+  }
+
+  function getPromotedFooterText(card) {
+    if (!card) return '';
+
+    const footer = queryMultipleIn(card, [
+      '.job-card-list__footer-wrapper',
+      '.job-card-container__footer-wrapper',
+      '[class*="footer-wrapper"]'
+    ]);
+    const footerText = cleanText((footer && (footer.innerText || footer.textContent)) || '');
+    if (footerText) {
+      return footerText;
+    }
+
+    const promotedNode = Array.from(card.querySelectorAll('li, span, div'))
+      .find(node => cleanText(node.textContent || '') === 'Promoted');
+    return cleanText((promotedNode && promotedNode.textContent) || '');
+  }
+
+  function isPromotedJobCard(card) {
+    const footerText = getPromotedFooterText(card);
+    if (/\bPromoted\b/i.test(footerText)) {
+      return true;
+    }
+
+    const ariaText = cleanText(card.getAttribute('aria-label') || '');
+    if (/\bPromoted\b/i.test(ariaText)) {
+      return true;
+    }
+
+    return false;
+  }
+
+  function applyPromotedJobsMode(mode) {
+    document.documentElement.classList.remove(
+      'li-ext-promoted-mode-off',
+      'li-ext-promoted-mode-highlight',
+      'li-ext-promoted-mode-hide'
+    );
+    document.documentElement.classList.add(`li-ext-promoted-mode-${mode}`);
+  }
+
+  function classifyJobCards() {
+    const mode = normalizePromotedJobsMode(currentSettings.promotedJobsMode);
+    applyPromotedJobsMode(mode);
+
+    const cards = getJobCards();
+    for (const card of cards) {
+      const wrapper = getCardWrapper(card);
+      const isPromoted = isPromotedJobCard(card);
+
+      card.classList.add('li-ext-job-card');
+      card.classList.toggle('li-ext-job-card--promoted', isPromoted);
+      card.classList.toggle('li-ext-job-card--organic', !isPromoted);
+      card.dataset.liExtPromoted = isPromoted ? 'true' : 'false';
+
+      if (wrapper) {
+        wrapper.classList.toggle('li-ext-job-card-wrapper--promoted', isPromoted);
+        wrapper.classList.toggle('li-ext-job-card-wrapper--organic', !isPromoted);
+        wrapper.dataset.liExtPromoted = isPromoted ? 'true' : 'false';
+      }
+    }
+  }
+
+  function queueJobCardClassification() {
+    if (jobCardScanQueued) return;
+    jobCardScanQueued = true;
+
+    window.requestAnimationFrame(() => {
+      jobCardScanQueued = false;
+      classifyJobCards();
+    });
+  }
+
+  async function loadSettings() {
+    try {
+      const result = await chrome.storage.sync.get(['settings']);
+      currentSettings = { ...defaultSettings, ...(result.settings || {}) };
+      currentSettings.promotedJobsMode = normalizePromotedJobsMode(currentSettings.promotedJobsMode);
+    } catch (error) {
+      console.warn('Failed to load settings, using defaults.', error);
+      currentSettings = { ...defaultSettings };
+    }
+
+    queueJobCardClassification();
+  }
+
+  function watchJobCards() {
+    if (jobCardObserver) {
+      return;
+    }
+
+    jobCardObserver = new MutationObserver((mutations) => {
+      const shouldRefresh = mutations.some(mutation => {
+        if (mutation.type !== 'childList') {
+          return false;
+        }
+        return Array.from(mutation.addedNodes).some(node => {
+          if (!(node instanceof Element)) {
+            return false;
+          }
+          return node.matches?.(JOB_CARD_WRAPPER_SELECTOR) ||
+            node.matches?.(JOB_CARD_SELECTOR) ||
+            node.querySelector?.(JOB_CARD_SELECTOR);
+        });
+      });
+
+      if (shouldRefresh) {
+        queueJobCardClassification();
+      }
+    });
+
+    jobCardObserver.observe(document.body, { childList: true, subtree: true });
+  }
+
+  function initPromotedJobsEnhancements() {
+    if (!window.location.href.includes('/jobs/')) {
+      return;
+    }
+
+    loadSettings();
+    watchJobCards();
+
+    chrome.storage.onChanged.addListener((changes, areaName) => {
+      if (areaName !== 'sync' || !changes.settings) {
+        return;
+      }
+
+      currentSettings = { ...defaultSettings, ...(changes.settings.newValue || {}) };
+      currentSettings.promotedJobsMode = normalizePromotedJobsMode(currentSettings.promotedJobsMode);
+      queueJobCardClassification();
+    });
+
+    window.addEventListener('popstate', queueJobCardClassification);
+    document.addEventListener('visibilitychange', () => {
+      if (!document.hidden) {
+        queueJobCardClassification();
+      }
+    });
+    queueJobCardClassification();
   }
 
   function extractApplicantsValue(text) {
@@ -783,5 +957,6 @@
   };
 
   console.log('LinkedIn JD Extractor loaded. Debug with: window.__linkedinJDExtractor.debug.testSelectors()');
+  initPromotedJobsEnhancements();
 
 })();

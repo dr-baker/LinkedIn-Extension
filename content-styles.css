@@ -1,8 +1,38 @@
 /**
  * LinkedIn JD Extractor - Content Styles
- * Styles for any injected UI elements on LinkedIn pages
+ * Styles for injected job card classification on LinkedIn pages
  */
 
-/* Currently no injected UI elements needed */
-/* This file is included for future extensibility */
+:root {
+  --li-ext-organic-border: rgba(18, 115, 51, 0.55);
+  --li-ext-organic-shadow: rgba(18, 115, 51, 0.18);
+  --li-ext-organic-bg: rgba(18, 115, 51, 0.05);
+  --li-ext-promoted-dim: 0.5;
+}
 
+.li-ext-job-card {
+  transition: opacity 0.18s ease, transform 0.18s ease, box-shadow 0.18s ease, border-color 0.18s ease, background-color 0.18s ease;
+}
+
+html.li-ext-promoted-mode-highlight .li-ext-job-card--organic {
+  border-color: var(--li-ext-organic-border) !important;
+  box-shadow: 0 0 0 1px var(--li-ext-organic-border), 0 8px 24px var(--li-ext-organic-shadow);
+  background: linear-gradient(180deg, var(--li-ext-organic-bg), rgba(255, 255, 255, 0));
+}
+
+html.li-ext-promoted-mode-highlight .li-ext-job-card--organic:hover {
+  transform: translateY(-1px);
+}
+
+html.li-ext-promoted-mode-highlight .li-ext-job-card--promoted {
+  opacity: var(--li-ext-promoted-dim);
+}
+
+html.li-ext-promoted-mode-highlight .li-ext-job-card--promoted:hover {
+  opacity: 0.8;
+}
+
+html.li-ext-promoted-mode-hide .li-ext-job-card-wrapper--promoted,
+html.li-ext-promoted-mode-hide .li-ext-job-card--promoted {
+  display: none !important;
+}

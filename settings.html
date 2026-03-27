@@ -89,10 +89,27 @@
           </p>
         </div>
       </section>
+
+      <section class="settings-section">
+        <h2 class="section-title">Job Search Results</h2>
+
+        <div class="setting-item setting-item--stacked">
+          <div class="setting-info">
+            <label class="setting-label" for="promoted-jobs-mode">Promoted jobs</label>
+            <p class="setting-description">
+              Passive page styling only. No extra clicks, filters, or request changes.
+            </p>
+          </div>
+          <select id="promoted-jobs-mode" class="select-input">
+            <option value="off">Leave unchanged</option>
+            <option value="highlight">Make non-promoted jobs stand out</option>
+            <option value="hide">Hide promoted jobs</option>
+          </select>
+        </div>
+      </section>
     </main>
   </div>
 
   <script src="settings.js"></script>
 </body>
 </html>
-

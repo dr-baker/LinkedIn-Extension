@@ -156,6 +156,10 @@ body::-webkit-scrollbar-thumb:hover {
   margin-bottom: 12px;
 }
 
+.setting-item--stacked {
+  flex-direction: column;
+}
+
 .setting-info {
   flex: 1;
 }
@@ -320,4 +324,3 @@ body::-webkit-scrollbar-thumb:hover {
 .btn-secondary:active {
   transform: scale(0.98);
 }
-
