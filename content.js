@@ -1,6 +1,6 @@
 /**
  * LinkedIn Job Description Extractor
- * Content script that extracts job information from LinkedIn job pages
+ * Content script that extracts job information from LinkedIn and BuiltIn job pages
  */
 
 (function() {
@@ -26,9 +26,10 @@
       '.job-details-jobs-unified-top-card__job-title h1',
       '.job-details-jobs-unified-top-card__job-title a',
       '.job-details-jobs-unified-top-card__job-title',
-      'a[href*="/jobs/view/"]',
       '.t-24.t-bold',
       '.jobs-details-top-card__job-title',
+      'h1',
+      '[role="heading"][aria-level="1"]',
       // Fallback: find h1/h2 in job details area
       '.jobs-search__job-details h1',
       '.jobs-search__job-details h2'
@@ -40,6 +41,7 @@
       '.job-details-jobs-unified-top-card__company-name',
       '.jobs-unified-top-card__company-name a',
       '.jobs-unified-top-card__company-name',
+      'a[href*="/company/"]',
       'a[href*="/company/"][href*="/life/"]',
       '.jobs-details-top-card__company-url',
       '.topcard__org-name-link'
@@ -393,14 +395,213 @@
   function parseTitleCompanyFromDocumentTitle() {
     const raw = cleanText(document.title || '');
     if (!raw) return { title: '', company: '' };
-    const parts = raw.split('|').map((part) => cleanText(part)).filter(Boolean);
-    if (parts.length >= 2) {
+
+    const pieces = raw
+      .split(/\s*\|\s*/)
+      .map((part) => cleanText(part))
+      .filter(Boolean)
+      .filter((part) => part.toLowerCase() !== 'linkedin');
+
+    if (pieces.length >= 2) {
       return {
-        title: parts[0] || '',
-        company: parts[1] === 'LinkedIn' ? '' : (parts[1] || '')
+        title: pieces[0] || '',
+        company: pieces[1] || ''
       };
     }
+
+    const fallbackMatch = raw.match(/^(.*?)\s*\|\s*(.*?)\s*\|\s*LinkedIn$/i);
+    if (fallbackMatch) {
+      return {
+        title: cleanText(fallbackMatch[1] || ''),
+        company: cleanText(fallbackMatch[2] || '')
+      };
+    }
+
     return { title: '', company: '' };
+  }
+
+  function extractTextSection(text, startAnchors, stopAnchors = []) {
+    const source = cleanText(text || '');
+    if (!source) return '';
+
+    const lowerSource = source.toLowerCase();
+    const startMatches = startAnchors
+      .map(anchor => {
+        const index = lowerSource.indexOf(anchor.toLowerCase());
+        return index >= 0 ? { anchor, index } : null;
+      })
+      .filter(Boolean)
+      .sort((a, b) => a.index - b.index);
+
+    if (startMatches.length === 0) {
+      return '';
+    }
+
+    const { anchor, index: startIndex } = startMatches[0];
+    const searchStart = startIndex + anchor.length;
+    const stopMatches = stopAnchors
+      .map(stop => lowerSource.indexOf(stop.toLowerCase(), searchStart))
+      .filter(index => index >= 0)
+      .sort((a, b) => a - b);
+    const endIndex = stopMatches.length > 0 ? stopMatches[0] : source.length;
+
+    let section = source.slice(startIndex, endIndex).trim();
+    section = section.replace(new RegExp(`^${anchor.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}\s*[:\-—–]?\s*`, 'i'), '').trim();
+    return section;
+  }
+
+  function extractDescriptionFromText(text) {
+    const description = extractTextSection(text, [
+      'about the job',
+      'about this job',
+      'job description',
+      'what you’ll do',
+      "what you'll do",
+      'what we’re looking for',
+      'what we are looking for'
+    ], [
+      'compensation',
+      'benefits',
+      'eeo statement',
+      'equal opportunity',
+      'why we care so much about belonging',
+      'diversity',
+      'privacy policy',
+      'apply now',
+      'additional information'
+    ]);
+
+    if (description) return description;
+
+    return cleanText(text || '');
+  }
+
+  function isLikelyJobTitle(text) {
+    const cleaned = cleanText(text || '');
+    if (!cleaned) return false;
+
+    const lower = cleaned.toLowerCase();
+    const blockedExact = new Set([
+      'full-time',
+      'full time',
+      'part-time',
+      'part time',
+      'contract',
+      'internship',
+      'temporary',
+      'remote',
+      'hybrid',
+      'on-site',
+      'onsite',
+      'entry level',
+      'associate',
+      'mid-senior level',
+      'director',
+      'executive',
+      'see all',
+      'show all',
+      'show more',
+      'show less',
+      'more',
+      'less'
+    ]);
+
+    if (blockedExact.has(lower)) return false;
+    if (/\b(full-time|full time|part-time|part time|contract|internship|temporary|remote|hybrid|on-site|onsite|entry level|associate|mid-senior level|director|executive)\b/i.test(lower) && cleaned.split(/\s+/).length <= 4) {
+      return false;
+    }
+
+    if (cleaned.length < 3 || cleaned.length > 140) return false;
+    if (/linkedin/i.test(cleaned)) return false;
+    if (/^(see all|show all|show more|show less|more|less)$/i.test(cleaned)) return false;
+    if (/^\$[\d,.]+(?:\s*[kKmM])?(?:\s*\/\s*[a-z]+)?(?:\s*-\s*\$[\d,.]+(?:\s*[kKmM])?(?:\s*\/\s*[a-z]+)?)?$/i.test(cleaned)) return false;
+    if (/^\$[\d,.]+(?:\s*[kKmM])?\s*\/\s*(?:yr|year|hr|hour|mo|month)$/i.test(cleaned)) return false;
+    if (/^(remote|hybrid|on-site|onsite|full-time|full time|part-time|part time|contract|internship|temporary|entry level|associate|mid-senior level|director|executive)$/i.test(cleaned)) return false;
+
+    return true;
+  }
+
+  function extractTitleFromMeta(root) {
+    const metaSelectors = [
+      'meta[property="og:title"]',
+      'meta[name="twitter:title"]',
+      'meta[name="title"]'
+    ];
+
+    for (const selector of metaSelectors) {
+      const meta = document.querySelector(selector);
+      const content = cleanText(meta?.getAttribute('content') || '');
+      if (!content) continue;
+
+      const parsed = parseTitleCompanyFromDocumentTitle();
+      if (parsed.title && content.toLowerCase().includes(parsed.title.toLowerCase())) {
+        return parsed.title;
+      }
+
+      const parts = content.split(/\s*\|\s*/).map(cleanText).filter(Boolean).filter(part => part.toLowerCase() !== 'linkedin');
+      if (parts.length > 0 && isLikelyJobTitle(parts[0])) {
+        return parts[0];
+      }
+    }
+
+    return '';
+  }
+
+  function extractTitleFromVisibleText(root, preferredTitle = '') {
+    const preferred = cleanText(preferredTitle || '');
+    if (preferred) {
+      const exactMatchSelectors = ['h1', 'h2', 'h3', 'p', 'div', 'span', 'a'];
+      for (const selector of exactMatchSelectors) {
+        const elements = root.querySelectorAll(selector);
+        for (const el of elements) {
+          const text = cleanText(el.textContent || '');
+          if (text === preferred) {
+            return text;
+          }
+        }
+      }
+    }
+
+    const titleSelectors = [
+      'h1',
+      '[role="heading"][aria-level="1"]',
+      'h2',
+      '[role="heading"][aria-level="2"]'
+    ];
+
+    for (const selector of titleSelectors) {
+      const elements = root.querySelectorAll(selector);
+      for (const el of elements) {
+        const text = cleanText(el.textContent || '');
+        if (!isLikelyJobTitle(text)) continue;
+        return text;
+      }
+    }
+
+    return '';
+  }
+
+  function extractCompanyFromVisibleText(root) {
+    const links = root.querySelectorAll('a[href*="/company/"]');
+    for (const link of links) {
+      const text = cleanText(link.textContent || '');
+      if (!text) continue;
+      if (text.toLowerCase().includes('followers')) continue;
+      if (text.length > 2 && text.length < 100) return text;
+    }
+
+    const companyCandidates = root.querySelectorAll('[role="heading"], h2, h3, span, div');
+    for (const el of companyCandidates) {
+      const text = cleanText(el.textContent || '');
+      if (!text || text.length > 100) continue;
+      if (/linkedin/i.test(text)) continue;
+      if (/followers?/i.test(text)) continue;
+      if (/^[A-Z0-9&.,'’()\-\s]+$/.test(text) || /[a-z]/i.test(text)) {
+        return text;
+      }
+    }
+
+    return '';
   }
 
   function extractCompanyFromLinks(root) {
@@ -478,6 +679,12 @@
     if (topCardMatch) {
       return cleanText(topCardMatch[0]);
     }
+
+    const mainText = getMainText(root);
+    const mainTextMatch = mainText.match(salaryPattern);
+    if (mainTextMatch) {
+      return cleanText(mainTextMatch[0]);
+    }
     
     return '';
   }
@@ -487,6 +694,14 @@
    */
   function extractWorkType() {
     const root = getJobDetailRoot();
+    const searchText = (text) => {
+      const lower = (text || '').toLowerCase();
+      if (lower.includes('remote')) return 'Remote';
+      if (lower.includes('hybrid')) return 'Hybrid';
+      if (lower.includes('on-site') || lower.includes('onsite')) return 'On-site';
+      return '';
+    };
+
     // Look in pill buttons first
     const pillSelectors = [
       '.job-details-jobs-unified-top-card__job-insight',
@@ -499,10 +714,8 @@
       try {
         const elements = root.querySelectorAll(selector);
         for (const el of elements) {
-          const text = (el.textContent || '').toLowerCase();
-          if (text.includes('remote')) return 'Remote';
-          if (text.includes('hybrid')) return 'Hybrid';
-          if (text.includes('on-site') || text.includes('onsite')) return 'On-site';
+          const match = searchText(el.textContent || '');
+          if (match) return match;
         }
       } catch (e) {}
     }
@@ -510,16 +723,15 @@
     // Check in the primary description area
     const descContainers = root.querySelectorAll('.job-details-jobs-unified-top-card__primary-description-container, .job-details-jobs-unified-top-card__job-insight');
     for (const container of descContainers) {
-      const text = (container.textContent || '').toLowerCase();
-      if (text.includes('remote')) return 'Remote';
-      if (text.includes('hybrid')) return 'Hybrid';
-      if (text.includes('on-site') || text.includes('onsite')) return 'On-site';
+      const match = searchText(container.textContent || '');
+      if (match) return match;
     }
 
-    const topCardText = getTopCardText(root).toLowerCase();
-    if (topCardText.includes(' remote')) return 'Remote';
-    if (topCardText.includes(' hybrid')) return 'Hybrid';
-    if (topCardText.includes('on-site') || topCardText.includes(' onsite')) return 'On-site';
+    const topCardMatch = searchText(getTopCardText(root));
+    if (topCardMatch) return topCardMatch;
+
+    const mainTextMatch = searchText(getMainText(root));
+    if (mainTextMatch) return mainTextMatch;
     
     return '';
   }
@@ -529,6 +741,16 @@
    */
   function extractEmploymentType() {
     const root = getJobDetailRoot();
+    const searchText = (text) => {
+      const lower = (text || '').toLowerCase();
+      if (lower.includes('full-time') || lower.includes('full time')) return 'Full-time';
+      if (lower.includes('part-time') || lower.includes('part time')) return 'Part-time';
+      if (lower.includes('contract')) return 'Contract';
+      if (lower.includes('internship')) return 'Internship';
+      if (lower.includes('temporary')) return 'Temporary';
+      return '';
+    };
+
     const pillSelectors = [
       '.job-details-jobs-unified-top-card__job-insight',
       '.job-details-jobs-unified-top-card__job-insight-view-model-secondary',
@@ -541,22 +763,17 @@
       try {
         const elements = root.querySelectorAll(selector);
         for (const el of elements) {
-          const text = (el.textContent || '').toLowerCase();
-          if (text.includes('full-time') || text.includes('full time')) return 'Full-time';
-          if (text.includes('part-time') || text.includes('part time')) return 'Part-time';
-          if (text.includes('contract')) return 'Contract';
-          if (text.includes('internship')) return 'Internship';
-          if (text.includes('temporary')) return 'Temporary';
+          const match = searchText(el.textContent || '');
+          if (match) return match;
         }
       } catch (e) {}
     }
 
-    const topCardText = getTopCardText(root).toLowerCase();
-    if (topCardText.includes('full-time') || topCardText.includes('full time')) return 'Full-time';
-    if (topCardText.includes('part-time') || topCardText.includes('part time')) return 'Part-time';
-    if (topCardText.includes('contract')) return 'Contract';
-    if (topCardText.includes('internship')) return 'Internship';
-    if (topCardText.includes('temporary')) return 'Temporary';
+    const topCardMatch = searchText(getTopCardText(root));
+    if (topCardMatch) return topCardMatch;
+
+    const mainTextMatch = searchText(getMainText(root));
+    if (mainTextMatch) return mainTextMatch;
     
     return '';
   }
@@ -601,6 +818,9 @@
     const mainText = getMainText(root);
     const genericMatch = mainText.match(/(?:posted on [a-z]+\s+\d{1,2},\s+\d{4}(?:,\s+\d{1,2}:\d{2}\s*[ap]m)?|\d+\s*(?:day|week|month|hour|minute)s?\s*ago)/i);
     if (genericMatch) return cleanText(genericMatch[0]);
+
+    const fallbackMatch = mainText.match(/(?:posted|reposted)\s+\d+\s*(?:day|week|month|hour|minute)s?\s*ago/i);
+    if (fallbackMatch) return cleanText(fallbackMatch[0]);
     
     return '';
   }
@@ -644,6 +864,12 @@
         return match;
       }
     }
+
+    const mainText = getMainText(root);
+    const mainTextMatch = extractApplicantsValue(mainText);
+    if (mainTextMatch) {
+      return mainTextMatch;
+    }
     
     return '';
   }
@@ -655,19 +881,27 @@
     const root = getJobDetailRoot();
     // Strategy 1: Standard selectors
     let descEl = queryMultiple(SELECTORS.description, root);
-    
-    // Strategy 2: Look for "About the job" section
+
+    // Strategy 2: Look for obvious description headings in the visible content
     if (!descEl) {
-      const headings = root.querySelectorAll('h2, h3, h4, [class*="heading"]');
+      const headingSelectors = 'h1, h2, h3, h4, h5, h6, strong, [role="heading"], [class*="heading"]';
+      const headings = root.querySelectorAll(headingSelectors);
       for (const heading of headings) {
-        if (heading.textContent && heading.textContent.toLowerCase().includes('about the job')) {
-          // Get the next sibling or parent's content
-          let content = heading.nextElementSibling;
-          if (content) {
-            descEl = content;
+        const headingText = cleanText(heading.textContent || '').toLowerCase();
+        if (
+          headingText.includes('about the job') ||
+          headingText.includes('about this job') ||
+          headingText.includes('job description') ||
+          headingText.includes('what you’ll do') ||
+          headingText.includes("what you'll do") ||
+          headingText.includes('what we’re looking for') ||
+          headingText.includes('what we are looking for')
+        ) {
+          const sibling = heading.nextElementSibling;
+          if (sibling) {
+            descEl = sibling;
             break;
           }
-          // Try parent
           const parent = heading.parentElement;
           if (parent) {
             descEl = parent;
@@ -716,22 +950,25 @@
       }
     }
     
-    if (!descEl) return '';
-    
-    // Get the inner text and clean it up
-    let text = descEl.innerText || descEl.textContent || '';
-    
+    const rawText = descEl ? (descEl.innerText || descEl.textContent || '') : getMainText(root);
+    if (!rawText) return '';
+
     // Clean up the text while preserving line breaks
-    text = text
+    let text = rawText
       .replace(/[ \t]+/g, ' ')     // Collapse spaces/tabs
       .replace(/\n{3,}/g, '\n\n')  // Max 2 newlines
       .trim();
-    
-    // Strip "About the job" or common headers from the start
-    const headerRegex = /^(about the job|job description|description)\s*/i;
-    text = text.replace(headerRegex, '').trim();
-    
-    return text;
+
+    const sliced = extractDescriptionFromText(text);
+    const cleanedSliced = sliced.replace(/^(about the job|about this job|job description|description)\s*[:\-—–]?\s*/i, '').trim();
+
+    // If the anchored slice is suspiciously small, prefer the larger text block.
+    if (cleanedSliced.length >= 250 || text.length < 500) {
+      return cleanedSliced;
+    }
+
+    // Fall back to the cleaned text if we couldn't anchor the section well enough.
+    return text.replace(/^(about the job|about this job|job description|description)\s*[:\-—–]?\s*/i, '').trim();
   }
 
   /**
@@ -843,12 +1080,142 @@
   }
 
   /**
+   * BuiltIn.com specific extraction
+   */
+  async function extractBuiltInJobData() {
+    const jobPosting = extractJsonLd();
+    const initData = extractBuiltinInitData();
+    
+    const jobData = {
+      title: '',
+      company: '',
+      location: '',
+      workType: '',
+      employmentType: '',
+      salary: '',
+      postedDate: '',
+      applicants: '',
+      description: '',
+      skills: [],
+      benefits: [],
+      companyDescription: '',
+      url: window.location.href,
+      extractedAt: new Date().toISOString()
+    };
+
+    if (initData && initData.job) {
+      jobData.title = initData.job.title || '';
+      jobData.company = initData.job.companyName || '';
+    }
+
+    if (jobPosting) {
+      if (!jobData.title) jobData.title = jobPosting.title || '';
+      if (!jobData.company) jobData.company = jobPosting.hiringOrganization?.name || '';
+      
+      if (jobPosting.jobLocation?.address) {
+        const addr = jobPosting.jobLocation.address;
+        jobData.location = [addr.addressLocality, addr.addressRegion, addr.addressCountry]
+          .filter(Boolean).join(', ');
+      }
+      jobData.employmentType = jobPosting.employmentType || '';
+      jobData.postedDate = jobPosting.datePosted || '';
+      jobData.description = cleanBuiltInDescription(jobPosting.description || '');
+      
+      if (jobPosting.baseSalary?.value) {
+        const val = jobPosting.baseSalary.value;
+        if (val.minValue && val.maxValue) {
+          jobData.salary = `$${val.minValue.toLocaleString()} - $${val.maxValue.toLocaleString()}`;
+          if (val.unitText) jobData.salary += ` per ${val.unitText.toLowerCase()}`;
+        }
+      }
+      
+      if (typeof jobPosting.jobBenefits === 'string') {
+        jobData.benefits = jobPosting.jobBenefits.split(',').map(b => b.trim());
+      } else if (Array.isArray(jobPosting.jobBenefits)) {
+        jobData.benefits = jobPosting.jobBenefits;
+      }
+
+      if (jobPosting.industry) {
+        jobData.skills = Array.isArray(jobPosting.industry) ? jobPosting.industry : [jobPosting.industry];
+      }
+    }
+
+    // Fallback to DOM if JSON-LD/Init missed something
+    if (!jobData.title) jobData.title = getTextContent('h1.fw-extrabold') || getTextContent('.job-header h1');
+    if (!jobData.company) jobData.company = getTextContent('a[href*="/company/"] span.fw-medium') || getTextContent('.company-name');
+    
+    if (!jobData.description) {
+      const descEl = document.querySelector('.job-description') || document.querySelector('.description') || document.querySelector('[class*="job-description"]');
+      if (descEl) jobData.description = descEl.innerText.trim();
+    }
+
+    if (!jobData.location) {
+      jobData.location = getTextContent('.attribute-section .font-barlow.text-gray-03');
+    }
+    
+    // BuiltIn often has a "What We Do" or "Why Work With Us" section
+    if (!jobData.companyDescription) {
+      const headings = Array.from(document.querySelectorAll('h2, h3'));
+      const whatWeDo = headings.find(h => h.textContent.includes('What We Do'));
+      if (whatWeDo && whatWeDo.nextElementSibling) {
+        jobData.companyDescription = whatWeDo.nextElementSibling.innerText.trim();
+      }
+    }
+
+    return { success: true, data: jobData };
+  }
+
+  function cleanBuiltInDescription(html) {
+    if (!html) return '';
+    const temp = document.createElement('div');
+    temp.innerHTML = html;
+    return temp.innerText.trim();
+  }
+
+  function extractJsonLd() {
+    const scripts = document.querySelectorAll('script[type="application/ld+json"]');
+    for (const script of scripts) {
+      try {
+        const data = JSON.parse(script.textContent);
+        const items = Array.isArray(data) ? data : (data['@graph'] || [data]);
+        const jobPosting = items.find(item => item['@type'] === 'JobPosting');
+        if (jobPosting) return jobPosting;
+      } catch (e) {}
+    }
+    return null;
+  }
+
+  function extractBuiltinInitData() {
+    const scripts = document.querySelectorAll('script');
+    for (const script of scripts) {
+      const match = script.textContent.match(/Builtin\.jobPostInit\((\{.*?\})\);/s);
+      if (match) {
+        try {
+          return JSON.parse(match[1]);
+        } catch (e) {}
+      }
+    }
+    return null;
+  }
+
+  /**
    * Main extraction function
    */
   async function extractJobData() {
+    const url = window.location.href;
+    const isLinkedIn = url.includes('linkedin.com');
+    const isBuiltIn = url.includes('builtin.com');
+
+    if (isBuiltIn) {
+      return await extractBuiltInJobData();
+    }
+
+    if (!isLinkedIn) {
+      return { error: 'not_supported_site' };
+    }
+
     // Check if we're on a job page
-    const isJobPage = window.location.href.includes('/jobs/') || 
-                      window.location.href.includes('linkedin.com/jobs');
+    const isJobPage = url.includes('/jobs/') || url.includes('linkedin.com/jobs');
     if (!isJobPage) {
       return { error: 'not_linkedin_jobs' };
     }
@@ -895,12 +1262,28 @@
     const detailRoot = getJobDetailRoot();
     const titleCompanyFromDocTitle = parseTitleCompanyFromDocumentTitle();
     if (!jobData.title) {
-      const viewLink = detailRoot.querySelector('a[href*="/jobs/view/"]');
-      const viewLinkText = viewLink ? cleanText(viewLink.textContent || '') : '';
-      jobData.title = viewLinkText || titleCompanyFromDocTitle.title || '';
+      jobData.title =
+        extractTitleFromVisibleText(detailRoot, titleCompanyFromDocTitle.title) ||
+        titleCompanyFromDocTitle.title ||
+        extractTitleFromMeta(detailRoot) ||
+        extractTitleFromVisibleText(detailRoot) ||
+        '';
+    }
+
+    if (!isLikelyJobTitle(jobData.title)) {
+      jobData.title =
+        extractTitleFromVisibleText(detailRoot, titleCompanyFromDocTitle.title) ||
+        titleCompanyFromDocTitle.title ||
+        extractTitleFromMeta(detailRoot) ||
+        extractTitleFromVisibleText(detailRoot) ||
+        '';
     }
     if (!jobData.company) {
-      jobData.company = extractCompanyFromLinks(detailRoot) || titleCompanyFromDocTitle.company || '';
+      jobData.company =
+        extractCompanyFromVisibleText(detailRoot) ||
+        extractCompanyFromLinks(detailRoot) ||
+        titleCompanyFromDocTitle.company ||
+        '';
     }
     if (!jobData.location) {
       jobData.location = extractLocationFromMetaLine(detailRoot) || extractLocationFromText(getMainText(detailRoot));

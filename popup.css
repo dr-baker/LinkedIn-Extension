@@ -293,6 +293,21 @@ body::-webkit-scrollbar-thumb:hover {
   display: flex;
   flex-direction: column;
   gap: 6px;
+  background: rgba(255, 255, 255, 0.02);
+  border: 1px solid rgba(255, 255, 255, 0.05);
+  border-radius: 10px;
+  padding: 10px 12px;
+  max-height: 100px;
+  overflow-y: auto;
+}
+
+.benefits-list::-webkit-scrollbar {
+  width: 4px;
+}
+
+.benefits-list::-webkit-scrollbar-thumb {
+  background: rgba(99, 102, 241, 0.2);
+  border-radius: 2px;
 }
 
 .benefit-item {
@@ -420,4 +435,3 @@ body::-webkit-scrollbar-thumb:hover {
 .refresh-btn:hover svg {
   transform: rotate(180deg);
 }
-

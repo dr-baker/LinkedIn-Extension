@@ -9,7 +9,7 @@
   // DOM element references
   const elements = {
     loading: document.getElementById('loading'),
-    notLinkedIn: document.getElementById('not-linkedin'),
+    notSupported: document.getElementById('not-supported'),
     noJob: document.getElementById('no-job'),
     jobData: document.getElementById('job-data'),
     statusBanner: document.getElementById('status-banner'),
@@ -49,9 +49,11 @@
    * Show a specific view and hide others
    */
   function showView(viewName) {
-    const views = ['loading', 'notLinkedIn', 'noJob', 'jobData'];
+    const views = ['loading', 'notSupported', 'noJob', 'jobData'];
     views.forEach(view => {
-      elements[view].classList.toggle('hidden', view !== viewName);
+      if (elements[view]) {
+        elements[view].classList.toggle('hidden', view !== viewName);
+      }
     });
   }
 
@@ -331,9 +333,15 @@
       // Get the current active tab
       const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
       
-      // Check if we're on LinkedIn
-      if (!tab.url || !tab.url.includes('linkedin.com')) {
-        showView('notLinkedIn');
+      if (!tab || !tab.url) {
+        showView('notSupported');
+        return;
+      }
+
+      const isSupported = tab.url.includes('linkedin.com') || tab.url.includes('builtin.com');
+      
+      if (!isSupported) {
+        showView('notSupported');
         return;
       }
       
@@ -349,7 +357,7 @@
         });
         
         // Wait a moment for the script to initialize
-        await new Promise(resolve => setTimeout(resolve, 100));
+        await new Promise(resolve => setTimeout(resolve, 200));
         
         // Try again
         const response = await chrome.tabs.sendMessage(tab.id, { action: 'extractJobData' });
@@ -357,7 +365,7 @@
       }
     } catch (err) {
       console.error('Extraction error:', err);
-      showView('notLinkedIn');
+      showView('notSupported');
       showStatus('Failed to extract data', 'error');
     }
   }
@@ -374,7 +382,8 @@
     if (result.error) {
       switch (result.error) {
         case 'not_linkedin_jobs':
-          showView('notLinkedIn');
+        case 'not_supported_site':
+          showView('notSupported');
           break;
         case 'no_job_selected':
         case 'no_job_data':
@@ -427,4 +436,3 @@
   }
 
 })();
-
