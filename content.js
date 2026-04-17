@@ -421,10 +421,11 @@
   }
 
   function extractTextSection(text, startAnchors, stopAnchors = []) {
-    const source = cleanText(text || '');
-    if (!source) return '';
+    const source = text || '';
+    if (!source.trim()) return '';
 
-    const lowerSource = source.toLowerCase();
+    const normalizedSource = source.replace(/[ \t]+/g, ' ');
+    const lowerSource = normalizedSource.toLowerCase();
     const startMatches = startAnchors
       .map(anchor => {
         const index = lowerSource.indexOf(anchor.toLowerCase());
@@ -443,7 +444,7 @@
       .map(stop => lowerSource.indexOf(stop.toLowerCase(), searchStart))
       .filter(index => index >= 0)
       .sort((a, b) => a - b);
-    const endIndex = stopMatches.length > 0 ? stopMatches[0] : source.length;
+    const endIndex = stopMatches.length > 0 ? stopMatches[0] : normalizedSource.length;
 
     let section = source.slice(startIndex, endIndex).trim();
     section = section.replace(new RegExp(`^${anchor.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}\s*[:\-—–]?\s*`, 'i'), '').trim();
@@ -473,7 +474,10 @@
 
     if (description) return description;
 
-    return cleanText(text || '');
+    return (text || '')
+      .replace(/[ \t]+/g, ' ')
+      .replace(/\n{3,}/g, '\n\n')
+      .trim();
   }
 
   function isLikelyJobTitle(text) {
