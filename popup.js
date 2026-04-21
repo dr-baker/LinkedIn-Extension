@@ -90,6 +90,116 @@
     return desc;
   }
 
+  function isBulletLine(line) {
+    return /^\s*(?:[-*•◦▪‣]|(?:\d+|[a-zA-Z])[.)])\s+/.test(line);
+  }
+
+  function getBulletContent(line) {
+    return line.replace(/^\s*(?:[-*•◦▪‣]|(?:\d+|[a-zA-Z])[.)])\s+/, '').trim();
+  }
+
+  function splitDescriptionLines(desc) {
+    const lines = (desc || '').replace(/\r\n/g, '\n').split('\n');
+    const blocks = [];
+    let paragraphLines = [];
+    let bulletLines = [];
+
+    function flushParagraph() {
+      if (paragraphLines.length === 0) return;
+      blocks.push({
+        type: 'paragraph',
+        lines: paragraphLines.slice()
+      });
+      paragraphLines = [];
+    }
+
+    function flushBullets() {
+      if (bulletLines.length === 0) return;
+      blocks.push({
+        type: 'bullets',
+        lines: bulletLines.slice()
+      });
+      bulletLines = [];
+    }
+
+    for (const line of lines) {
+      const trimmed = line.trim();
+
+      if (!trimmed) {
+        flushParagraph();
+        flushBullets();
+        continue;
+      }
+
+      if (isBulletLine(line)) {
+        flushParagraph();
+        bulletLines.push(line);
+        continue;
+      }
+
+      flushBullets();
+      paragraphLines.push(trimmed);
+    }
+
+    flushParagraph();
+    flushBullets();
+
+    return blocks;
+  }
+
+  function formatDescriptionAsText(desc) {
+    if (!desc) return 'No description available';
+
+    const blocks = splitDescriptionLines(desc);
+    if (blocks.length === 0) return formatDescription(desc);
+
+    return blocks
+      .map(block => {
+        if (block.type === 'bullets') {
+          return block.lines.map(line => `• ${getBulletContent(line)}`).join('\n');
+        }
+
+        return block.lines.join(' ').trim();
+      })
+      .join('\n\n');
+  }
+
+  function renderDescription(desc) {
+    elements.description.innerHTML = '';
+
+    if (!desc) {
+      elements.description.textContent = 'No description available';
+      return;
+    }
+
+    const fragment = document.createDocumentFragment();
+    const blocks = splitDescriptionLines(desc);
+
+    blocks.forEach(block => {
+      if (block.type === 'bullets') {
+        const list = document.createElement('ul');
+        block.lines.forEach(line => {
+          const item = document.createElement('li');
+          item.textContent = getBulletContent(line);
+          list.appendChild(item);
+        });
+        fragment.appendChild(list);
+        return;
+      }
+
+      const paragraph = document.createElement('p');
+      paragraph.textContent = block.lines.join(' ').trim();
+      fragment.appendChild(paragraph);
+    });
+
+    if (!fragment.childNodes.length) {
+      elements.description.textContent = formatDescription(desc);
+      return;
+    }
+
+    elements.description.appendChild(fragment);
+  }
+
   /**
    * Render skills as tags
    */
@@ -142,7 +252,7 @@
     elements.workType.textContent = formatValue(data.workType);
     elements.employmentType.textContent = formatValue(data.employmentType);
     elements.postedDate.textContent = formatValue(data.postedDate);
-    elements.description.textContent = formatDescription(data.description);
+    renderDescription(data.description);
     
     renderSkills(data.skills);
     renderBenefits(data.benefits);
@@ -190,7 +300,7 @@
       '───────────────────────────────────────',
       '📝 DESCRIPTION',
       '───────────────────────────────────────',
-      data.description || 'No description available',
+      formatDescriptionAsText(data.description),
       ''
     ];
     

@@ -260,7 +260,28 @@ body::-webkit-scrollbar-thumb:hover {
   padding: 14px;
   max-height: 150px;
   overflow-y: auto;
-  white-space: pre-wrap;
+  white-space: normal;
+}
+
+.description-content p,
+.description-content ul,
+.description-content ol {
+  margin: 0 0 10px;
+}
+
+.description-content p:last-child,
+.description-content ul:last-child,
+.description-content ol:last-child {
+  margin-bottom: 0;
+}
+
+.description-content ul,
+.description-content ol {
+  padding-left: 18px;
+}
+
+.description-content li + li {
+  margin-top: 4px;
 }
 
 .description-content::-webkit-scrollbar {
