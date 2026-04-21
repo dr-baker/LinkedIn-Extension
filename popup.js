@@ -31,7 +31,26 @@
     // Buttons
     copyBtn: document.getElementById('copy-btn'),
     downloadBtn: document.getElementById('download-btn'),
-    refreshBtn: document.getElementById('refresh-btn')
+    refreshBtn: document.getElementById('refresh-btn'),
+
+    // Action bar / completeness
+    actionBar: document.getElementById('action-bar'),
+    completeness: document.getElementById('completeness'),
+
+    // Section status labels
+    descriptionStatus: document.getElementById('description-status'),
+    skillsStatus: document.getElementById('skills-status'),
+    benefitsStatus: document.getElementById('benefits-status'),
+    companyDescStatus: document.getElementById('company-desc-status'),
+
+    // Section wrappers (for missing-state styling)
+    descriptionSection: document.querySelector('.description-section'),
+
+    // Extra fields
+    applicants: document.getElementById('applicants'),
+    applicantsSep: document.querySelector('.applicants-sep'),
+    companyDescription: document.getElementById('company-description'),
+    companyDescSection: document.getElementById('company-desc-section')
   };
 
   // Current job data cache
@@ -55,6 +74,85 @@
         elements[view].classList.toggle('hidden', view !== viewName);
       }
     });
+    // Action bar is only shown when we have job data
+    if (elements.actionBar) {
+      elements.actionBar.classList.toggle('hidden', viewName !== 'jobData');
+    }
+  }
+
+  /**
+   * Check if a value should count as "missing"
+   */
+  function isMissing(value) {
+    if (value === null || value === undefined) return true;
+    if (typeof value === 'string') return value.trim() === '';
+    if (Array.isArray(value)) return value.length === 0;
+    return false;
+  }
+
+  /**
+   * Mark an info-card as missing (amber) when its bound value is empty.
+   */
+  function setInfoField(cardSelector, valueEl, value) {
+    const card = document.querySelector(cardSelector);
+    const missing = isMissing(value);
+    if (card) card.classList.toggle('is-missing', missing);
+    valueEl.textContent = missing ? 'Not found' : value;
+  }
+
+  /**
+   * Set section status pill + missing class on the section wrapper.
+   */
+  function setSectionStatus(sectionEl, statusEl, isEmpty, labelWhenPresent = '') {
+    if (!sectionEl) return;
+    sectionEl.classList.toggle('is-missing', isEmpty);
+    if (!statusEl) return;
+    if (isEmpty) {
+      statusEl.textContent = 'Missing';
+      statusEl.classList.add('missing');
+    } else {
+      statusEl.textContent = labelWhenPresent;
+      statusEl.classList.remove('missing');
+    }
+  }
+
+  /**
+   * Update the completeness indicator in the action bar.
+   */
+  function updateCompleteness(data) {
+    const tracked = [
+      ['Title', data.title],
+      ['Company', data.company],
+      ['Location', data.location],
+      ['Salary', data.salary],
+      ['Work type', data.workType],
+      ['Employment', data.employmentType],
+      ['Posted', data.postedDate],
+      ['Applicants', data.applicants],
+      ['Description', data.description],
+      ['Skills', data.skills],
+      ['Benefits', data.benefits],
+      ['Company description', data.companyDescription]
+    ];
+
+    const missing = tracked.filter(([, v]) => isMissing(v)).map(([name]) => name);
+    const el = elements.completeness;
+    if (!el) return;
+
+    const dot = el.querySelector('.completeness-dot');
+    const text = el.querySelector('.completeness-text');
+
+    el.classList.remove('ok', 'warn');
+    if (missing.length === 0) {
+      el.classList.add('ok');
+      text.textContent = 'All fields extracted';
+      el.title = 'All tracked fields were found.';
+    } else {
+      el.classList.add('warn');
+      text.textContent = `${missing.length} missing`;
+      el.title = `Missing: ${missing.join(', ')}`;
+    }
+    void dot;
   }
 
   /**
@@ -204,12 +302,15 @@
    * Render skills as tags
    */
   function renderSkills(skills) {
-    if (!skills || skills.length === 0) {
-      elements.skillsSection.classList.add('hidden');
+    const isEmpty = !skills || skills.length === 0;
+    elements.skillsSection.classList.remove('hidden');
+    setSectionStatus(elements.skillsSection, elements.skillsStatus, isEmpty, `${skills ? skills.length : 0}`);
+
+    if (isEmpty) {
+      elements.skills.innerHTML = '';
       return;
     }
-    
-    elements.skillsSection.classList.remove('hidden');
+
     elements.skills.innerHTML = skills
       .map(skill => `<span class="skill-tag">${escapeHtml(skill)}</span>`)
       .join('');
@@ -219,12 +320,15 @@
    * Render benefits as list
    */
   function renderBenefits(benefits) {
-    if (!benefits || benefits.length === 0) {
-      elements.benefitsSection.classList.add('hidden');
+    const isEmpty = !benefits || benefits.length === 0;
+    elements.benefitsSection.classList.remove('hidden');
+    setSectionStatus(elements.benefitsSection, elements.benefitsStatus, isEmpty, `${benefits ? benefits.length : 0}`);
+
+    if (isEmpty) {
+      elements.benefits.innerHTML = '';
       return;
     }
-    
-    elements.benefitsSection.classList.remove('hidden');
+
     elements.benefits.innerHTML = benefits
       .map(benefit => `<div class="benefit-item">${escapeHtml(benefit)}</div>`)
       .join('');
@@ -244,21 +348,50 @@
    */
   function displayJobData(data) {
     currentJobData = data;
-    
+
     elements.jobTitle.textContent = formatValue(data.title);
     elements.companyName.textContent = formatValue(data.company);
     elements.location.textContent = formatValue(data.location);
-    elements.salary.textContent = formatValue(data.salary);
-    elements.workType.textContent = formatValue(data.workType);
-    elements.employmentType.textContent = formatValue(data.employmentType);
-    elements.postedDate.textContent = formatValue(data.postedDate);
+
+    // Applicants in meta line — shown only when present
+    if (!isMissing(data.applicants)) {
+      elements.applicants.textContent = `${data.applicants} applicants`;
+      elements.applicants.classList.remove('hidden');
+      elements.applicantsSep.classList.remove('hidden');
+    } else {
+      elements.applicants.classList.add('hidden');
+      elements.applicantsSep.classList.add('hidden');
+    }
+
+    // Company description — shown only when present
+    if (!isMissing(data.companyDescription)) {
+      elements.companyDescription.textContent = data.companyDescription;
+      elements.companyDescSection.classList.remove('hidden');
+      setSectionStatus(elements.companyDescSection, elements.companyDescStatus, false, '');
+    } else {
+      elements.companyDescSection.classList.add('hidden');
+    }
+
+    setInfoField('[data-field="salary"]', elements.salary, data.salary);
+    setInfoField('[data-field="workType"]', elements.workType, data.workType);
+    setInfoField('[data-field="employmentType"]', elements.employmentType, data.employmentType);
+    setInfoField('[data-field="postedDate"]', elements.postedDate, data.postedDate);
+
     renderDescription(data.description);
-    
+    setSectionStatus(
+      elements.descriptionSection,
+      elements.descriptionStatus,
+      isMissing(data.description),
+      ''
+    );
+
     renderSkills(data.skills);
     renderBenefits(data.benefits);
-    
+
+    updateCompleteness(data);
+
     showView('jobData');
-    
+
     // Check settings and perform auto-actions
     performAutoActions(data);
   }
@@ -319,7 +452,15 @@
       data.benefits.forEach(b => lines.push(`• ${b}`));
       lines.push('');
     }
-    
+
+    if (data.companyDescription && data.companyDescription.trim()) {
+      lines.push('───────────────────────────────────────');
+      lines.push('🏛️ ABOUT THE COMPANY');
+      lines.push('───────────────────────────────────────');
+      lines.push(data.companyDescription.trim());
+      lines.push('');
+    }
+
     lines.push('───────────────────────────────────────');
     lines.push(`🔗 URL: ${data.url || window.location.href}`);
     lines.push(`📆 Extracted: ${new Date(data.extractedAt).toLocaleString()}`);
