@@ -12,6 +12,7 @@
     autoSaveToggle: document.getElementById('auto-save-toggle'),
     fileFormat: document.getElementById('file-format'),
     promotedJobsMode: document.getElementById('promoted-jobs-mode'),
+    parserStrategy: document.getElementById('parser-strategy'),
     downloadFolder: document.getElementById('download-folder'),
     selectFolderBtn: document.getElementById('select-folder-btn'),
     saveOptionsSection: document.getElementById('save-options-section'),
@@ -24,7 +25,8 @@
     autoSave: false,
     fileFormat: 'text',
     downloadFolder: '',
-    promotedJobsMode: 'highlight'
+    promotedJobsMode: 'highlight',
+    parserStrategy: 'robust'
   };
 
   /**
@@ -56,6 +58,7 @@
       elements.fileFormat.value = settings.fileFormat || 'text';
       elements.downloadFolder.value = settings.downloadFolder || '';
       elements.promotedJobsMode.value = settings.promotedJobsMode || 'highlight';
+      elements.parserStrategy.value = settings.parserStrategy || 'robust';
       
       // Show/hide save options section based on auto-save toggle
       updateSaveOptionsVisibility();
@@ -78,7 +81,8 @@
         autoSave: elements.autoSaveToggle.checked,
         fileFormat: elements.fileFormat.value,
         downloadFolder: elements.downloadFolder.value,
-        promotedJobsMode: elements.promotedJobsMode.value || 'highlight'
+        promotedJobsMode: elements.promotedJobsMode.value || 'highlight',
+        parserStrategy: elements.parserStrategy.value || 'robust'
       };
       
       await chrome.storage.sync.set({ settings });
@@ -146,6 +150,10 @@
     });
 
     elements.promotedJobsMode.addEventListener('change', async () => {
+      await saveSettings();
+    });
+
+    elements.parserStrategy.addEventListener('change', async () => {
       await saveSettings();
     });
 

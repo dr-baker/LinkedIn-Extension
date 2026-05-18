@@ -94,12 +94,14 @@
   const JOB_CARD_WRAPPER_SELECTOR = '.scaffold-layout__list-item';
   const JOB_CARD_SELECTOR = '.job-card-container, .job-card-list, [class*="job-card-container"]';
   const PROMOTED_JOBS_MODES = new Set(['off', 'highlight', 'hide']);
+  const PARSER_STRATEGIES = new Set(['robust', 'legacy']);
   const defaultSettings = {
     autoCopy: false,
     autoSave: false,
     fileFormat: 'text',
     downloadFolder: '',
-    promotedJobsMode: 'highlight'
+    promotedJobsMode: 'highlight',
+    parserStrategy: 'robust'
   };
   let currentSettings = { ...defaultSettings };
   let jobCardObserver = null;
@@ -143,6 +145,78 @@
     return [];
   }
 
+  function getResultListPenalty(text) {
+    let penalty = 0;
+    if (/jobs based on your preferences/i.test(text)) penalty += 80;
+    if (/how promoted jobs are ranked/i.test(text)) penalty += 70;
+    if (/are these results helpful/i.test(text)) penalty += 60;
+    if (/\b\d+\+?\s+results\b/i.test(text)) penalty += 45;
+    if ((text.match(/\bPosted\s+\d+\s+(?:hour|day|week|month)s?\s+ago\b/gi) || []).length >= 4) penalty += 50;
+    return penalty;
+  }
+
+  function findSemanticJobDetailRoot() {
+    const titleCompany = parseTitleCompanyFromDocumentTitle();
+    const title = cleanText(titleCompany.title || '');
+    const company = cleanText(titleCompany.company || '');
+    const selectors = [
+      '[data-testid="lazy-column"]',
+      '[data-testid="lazy-column"] > div',
+      'main section',
+      'main article',
+      'main > div',
+      'main div',
+      '[role="main"] div'
+    ];
+    const candidates = [];
+    const seen = new Set();
+
+    for (const selector of selectors) {
+      let nodes = [];
+      try {
+        nodes = Array.from(document.querySelectorAll(selector));
+      } catch (e) {
+        continue;
+      }
+
+      for (const node of nodes) {
+        if (!node || seen.has(node)) continue;
+        seen.add(node);
+
+        const text = cleanText(node.innerText || node.textContent || '');
+        if (text.length < 120 || text.length > 60000) continue;
+
+        const hasAbout = /\b(?:about the job|about this job|job description)\b/i.test(text);
+        const hasTitle = title && text.includes(title);
+        const hasCompany = company && text.includes(company);
+        const hasApplyAction = /\bApply\b/i.test(text) && /\bSave\b/i.test(text);
+
+        if (!hasAbout && !hasTitle && !hasCompany) continue;
+
+        const resultPenalty = getResultListPenalty(text);
+        let score = 0;
+        if (hasAbout) score += 100;
+        if (hasTitle) score += 35;
+        if (hasCompany) score += 20;
+        if (hasApplyAction) score += 15;
+        if (node.getAttribute('data-testid') === 'lazy-column') score += 10;
+        if (text.length >= 700 && text.length <= 30000) score += 10;
+        score -= resultPenalty;
+
+        candidates.push({ node, score, length: text.length, hasAbout, resultPenalty });
+      }
+    }
+
+    candidates.sort((a, b) => {
+      if (a.score !== b.score) return b.score - a.score;
+      if (a.hasAbout !== b.hasAbout) return a.hasAbout ? -1 : 1;
+      return a.length - b.length;
+    });
+
+    const best = candidates[0];
+    return best && best.score > 0 ? best.node : null;
+  }
+
   function getJobDetailRoot(forceRefresh = false) {
     if (
       !forceRefresh &&
@@ -153,7 +227,7 @@
       return cachedJobDetailRoot;
     }
 
-    cachedJobDetailRoot = queryMultipleIn(document, SELECTORS.jobDetailContainer);
+    cachedJobDetailRoot = findSemanticJobDetailRoot() || queryMultipleIn(document, SELECTORS.jobDetailContainer);
     cachedJobDetailHref = window.location.href;
     return cachedJobDetailRoot || document;
   }
@@ -182,6 +256,17 @@
 
   function normalizePromotedJobsMode(value) {
     return PROMOTED_JOBS_MODES.has(value) ? value : defaultSettings.promotedJobsMode;
+  }
+
+  function normalizeParserStrategy(value) {
+    return PARSER_STRATEGIES.has(value) ? value : defaultSettings.parserStrategy;
+  }
+
+  function normalizeSettings(settings = {}) {
+    const normalized = { ...defaultSettings, ...settings };
+    normalized.promotedJobsMode = normalizePromotedJobsMode(normalized.promotedJobsMode);
+    normalized.parserStrategy = normalizeParserStrategy(normalized.parserStrategy);
+    return normalized;
   }
 
   function getCardWrapper(card) {
@@ -276,8 +361,7 @@
   async function loadSettings() {
     try {
       const result = await chrome.storage.sync.get(['settings']);
-      currentSettings = { ...defaultSettings, ...(result.settings || {}) };
-      currentSettings.promotedJobsMode = normalizePromotedJobsMode(currentSettings.promotedJobsMode);
+      currentSettings = normalizeSettings(result.settings || {});
     } catch (error) {
       console.warn('Failed to load settings, using defaults.', error);
       currentSettings = { ...defaultSettings };
@@ -327,8 +411,7 @@
         return;
       }
 
-      currentSettings = { ...defaultSettings, ...(changes.settings.newValue || {}) };
-      currentSettings.promotedJobsMode = normalizePromotedJobsMode(currentSettings.promotedJobsMode);
+      currentSettings = normalizeSettings(changes.settings.newValue || {});
       queueJobCardClassification();
     });
 
@@ -390,6 +473,16 @@
       'main'
     ]);
     return cleanText((main && (main.innerText || main.textContent)) || '');
+  }
+
+  function getMainDescriptionText(root) {
+    const main = queryMultipleIn(root || document, [
+      '[role="main"]',
+      '#workspace',
+      '[data-testid="lazy-column"]',
+      'main'
+    ]);
+    return normalizeSerializedDescription((main && (main.innerText || main.textContent)) || '');
   }
 
   function parseTitleCompanyFromDocumentTitle() {
@@ -469,7 +562,12 @@
       'diversity',
       'privacy policy',
       'apply now',
-      'additional information'
+      'additional information',
+      'set alert for similar jobs',
+      'job search faster with premium',
+      'about the company',
+      'more jobs',
+      'similar jobs'
     ]);
 
     if (description) return description;
@@ -478,6 +576,79 @@
       .replace(/[ \t]+/g, ' ')
       .replace(/\n{3,}/g, '\n\n')
       .trim();
+  }
+
+  function normalizeSerializedDescription(text) {
+    return (text || '')
+      .replace(/\r\n/g, '\n')
+      .replace(/[ \t]+\n/g, '\n')
+      .replace(/\n[ \t]+/g, '\n')
+      .replace(/[ \t]{2,}/g, ' ')
+      .replace(/\n{3,}/g, '\n\n')
+      .trim();
+  }
+
+  function isHiddenElement(el) {
+    if (!el || !(el instanceof Element)) return false;
+    if (el.hidden || el.getAttribute('aria-hidden') === 'true') return true;
+
+    const style = window.getComputedStyle ? window.getComputedStyle(el) : null;
+    return Boolean(style && (style.display === 'none' || style.visibility === 'hidden'));
+  }
+
+  function serializeDescriptionNode(node, listDepth = 0) {
+    if (!node) return '';
+
+    if (node.nodeType === Node.TEXT_NODE) {
+      return (node.textContent || '').replace(/\s+/g, ' ');
+    }
+
+    if (node.nodeType !== Node.ELEMENT_NODE || isHiddenElement(node)) {
+      return '';
+    }
+
+    const el = node;
+    const tag = el.tagName.toLowerCase();
+
+    if (tag === 'br') {
+      return '\n';
+    }
+
+    if (tag === 'li') {
+      const text = Array.from(el.childNodes)
+        .map(child => serializeDescriptionNode(child, listDepth + 1))
+        .join('')
+        .replace(/\s*\n\s*/g, ' ')
+        .replace(/\s+/g, ' ')
+        .trim();
+      return text ? `${'  '.repeat(Math.max(0, listDepth - 1))}- ${text}\n` : '';
+    }
+
+    const childText = Array.from(el.childNodes)
+      .map(child => serializeDescriptionNode(child, tag === 'ul' || tag === 'ol' ? listDepth + 1 : listDepth))
+      .join('');
+
+    if (tag === 'ul' || tag === 'ol') {
+      return `\n${childText}\n`;
+    }
+
+    if (/^(p|div|section|article|h[1-6])$/.test(tag)) {
+      const text = childText.trim();
+      return text ? `\n${text}\n` : '';
+    }
+
+    return childText;
+  }
+
+  function getDescriptionElementText(el) {
+    if (!el) return '';
+
+    const serialized = normalizeSerializedDescription(serializeDescriptionNode(el));
+    if (serialized) {
+      return serialized;
+    }
+
+    return normalizeSerializedDescription(el.innerText || el.textContent || '');
   }
 
   function isLikelyJobTitle(text) {
@@ -632,6 +803,28 @@
     return '';
   }
 
+  function stripKnownJobHeaderText(text, values) {
+    let cleaned = text || '';
+    for (const value of values) {
+      const token = cleanText(value || '');
+      if (!token) continue;
+      cleaned = cleaned.split(token).join(' ');
+    }
+    return cleanText(cleaned);
+  }
+
+  function cleanLocationCandidate(location, knownValues) {
+    const cleaned = cleanText(location || '');
+    if (!cleaned) return '';
+
+    const stripped = stripKnownJobHeaderText(cleaned, knownValues);
+    if (stripped && stripped !== cleaned) {
+      return extractLocationFromText(stripped) || stripped;
+    }
+
+    return cleaned;
+  }
+
   function extractLocationFromMetaLine(root) {
     const candidates = root.querySelectorAll('span, div, p, li');
     const agoPattern = /\d+\s*(day|week|month|hour|minute)s?\s*ago/i;
@@ -646,6 +839,44 @@
       const match = head.match(locationPattern);
       if (match && match[1]) return cleanText(match[1]);
     }
+    return '';
+  }
+
+  function extractLocationFromSemanticNodes(root) {
+    const candidates = root.querySelectorAll('span, div, p, li');
+    const locationExactPattern = /^([A-Z][A-Za-z.'-]+(?:\s+[A-Z][A-Za-z.'-]+){0,4},\s*[A-Z]{2})(?:\s*\((?:Remote|Hybrid|On-site|Onsite)\))?$/;
+    const locationFragmentPattern = /\b([A-Z][A-Za-z.'-]+(?:\s+[A-Z][A-Za-z.'-]+){0,4},\s*[A-Z]{2})(?:\s*\((?:Remote|Hybrid|On-site|Onsite)\))?\b/;
+
+    for (const node of candidates) {
+      if (node.children && node.children.length > 1) continue;
+      const text = cleanText(node.textContent || '');
+      if (!text || text.length > 120) continue;
+
+      const exact = text.match(locationExactPattern);
+      if (exact && exact[1]) return cleanText(exact[1]);
+    }
+
+    for (const node of candidates) {
+      if (node.children && node.children.length > 1) continue;
+      const text = cleanText(node.textContent || '');
+      if (!text || text.length > 180 || !text.includes('·')) continue;
+
+      const fragments = text.split('·').map(cleanText).filter(Boolean);
+      for (const fragment of fragments) {
+        const exact = fragment.match(locationExactPattern);
+        if (exact && exact[1]) return cleanText(exact[1]);
+      }
+    }
+
+    for (const node of candidates) {
+      if (node.children && node.children.length > 1) continue;
+      const text = cleanText(node.textContent || '');
+      if (!text || text.length > 80) continue;
+
+      const match = text.match(locationFragmentPattern);
+      if (match && match[1]) return cleanText(match[1]);
+    }
+
     return '';
   }
 
@@ -954,17 +1185,24 @@
       }
     }
     
-    const rawText = descEl ? (descEl.innerText || descEl.textContent || '') : getMainText(root);
+    const rawText = descEl ? getDescriptionElementText(descEl) : getMainText(root);
     if (!rawText) return '';
 
     // Clean up the text while preserving line breaks
-    let text = rawText
-      .replace(/[ \t]+/g, ' ')     // Collapse spaces/tabs
-      .replace(/\n{3,}/g, '\n\n')  // Max 2 newlines
-      .trim();
+    let text = normalizeSerializedDescription(rawText);
 
     const sliced = extractDescriptionFromText(text);
     const cleanedSliced = sliced.replace(/^(about the job|about this job|job description|description)\s*[:\-—–]?\s*/i, '').trim();
+    const mainText = getMainDescriptionText(root);
+    const mainSliced = extractDescriptionFromText(mainText);
+    const cleanedMainSliced = mainSliced.replace(/^(about the job|about this job|job description|description)\s*[:\-—–]?\s*/i, '').trim();
+
+    if (
+      cleanedMainSliced.length > cleanedSliced.length + 250 &&
+      /(?:about|what|who|responsibilities|requirements|qualifications)/i.test(cleanedMainSliced)
+    ) {
+      return cleanedMainSliced;
+    }
 
     // If the anchored slice is suspiciously small, prefer the larger text block.
     if (cleanedSliced.length >= 250 || text.length < 500) {
@@ -1083,12 +1321,783 @@
     });
   }
 
+  function createEmptyJobData() {
+    return {
+      title: '',
+      company: '',
+      location: '',
+      workType: '',
+      employmentType: '',
+      salary: '',
+      postedDate: '',
+      applicants: '',
+      description: '',
+      skills: [],
+      benefits: [],
+      companyDescription: '',
+      url: extractJobUrl(),
+      extractedAt: new Date().toISOString()
+    };
+  }
+
+  function isMissingField(value) {
+    if (value === null || value === undefined) return true;
+    if (typeof value === 'string') return value.trim() === '';
+    if (Array.isArray(value)) return value.length === 0;
+    return false;
+  }
+
+  function mergeUnique(values) {
+    const out = [];
+    for (const value of values.flat()) {
+      const cleaned = cleanText(value || '');
+      if (cleaned && !out.includes(cleaned)) {
+        out.push(cleaned);
+      }
+    }
+    return out;
+  }
+
+  function fillMissingJobData(target, ...sources) {
+    const scalarFields = [
+      'title',
+      'company',
+      'location',
+      'workType',
+      'employmentType',
+      'salary',
+      'postedDate',
+      'applicants',
+      'description',
+      'companyDescription',
+      'url'
+    ];
+
+    for (const source of sources) {
+      if (!source) continue;
+
+      for (const field of scalarFields) {
+        if (isMissingField(target[field]) && !isMissingField(source[field])) {
+          target[field] = typeof source[field] === 'string' ? source[field].trim() : source[field];
+        }
+      }
+
+      if (Array.isArray(source.skills)) {
+        target.skills = mergeUnique([target.skills || [], source.skills]);
+      }
+      if (Array.isArray(source.benefits)) {
+        target.benefits = mergeUnique([target.benefits || [], source.benefits]);
+      }
+    }
+
+    return target;
+  }
+
+  function extractJobPostingLocation(jobPosting) {
+    const locations = Array.isArray(jobPosting?.jobLocation)
+      ? jobPosting.jobLocation
+      : [jobPosting?.jobLocation].filter(Boolean);
+
+    for (const location of locations) {
+      const addr = location?.address || location;
+      const value = [
+        addr?.addressLocality,
+        addr?.addressRegion,
+        addr?.addressCountry
+      ].filter(Boolean).join(', ');
+      if (value) return value;
+    }
+
+    return '';
+  }
+
+  function extractSalaryFromJobPosting(jobPosting) {
+    const value = jobPosting?.baseSalary?.value;
+    if (!value) return '';
+
+    if (typeof value === 'string') {
+      return cleanText(value);
+    }
+
+    if (value.minValue && value.maxValue) {
+      let salary = `$${Number(value.minValue).toLocaleString()} - $${Number(value.maxValue).toLocaleString()}`;
+      if (value.unitText) {
+        salary += ` per ${String(value.unitText).toLowerCase()}`;
+      }
+      return salary;
+    }
+
+    if (value.value) {
+      let salary = `$${Number(value.value).toLocaleString()}`;
+      if (value.unitText) {
+        salary += ` per ${String(value.unitText).toLowerCase()}`;
+      }
+      return salary;
+    }
+
+    return '';
+  }
+
+  function extractMetaContent(selectors) {
+    for (const selector of selectors) {
+      const meta = document.querySelector(selector);
+      const content = cleanText(meta?.getAttribute('content') || '');
+      if (content) return content;
+    }
+    return '';
+  }
+
+  function extractCanonicalUrl() {
+    const canonical = document.querySelector('link[rel="canonical"]');
+    return cleanText(canonical?.getAttribute('href') || '');
+  }
+
+  function extractBuiltInLocationFromText(text) {
+    const cleaned = cleanText(text || '');
+    if (!cleaned) return '';
+
+    const locationMatch = cleaned.match(/\b(?:Remote|Hybrid|In-Office|On-Site|Onsite|Remote or Hybrid)(?:\s+in)?\s+([A-Z][A-Za-z .'-]+,\s+[A-Z]{2}(?:,\s+USA)?|United States|USA|[A-Z][A-Za-z .'-]+,\s+[A-Za-z .'-]+,\s+USA)\b/i);
+    if (locationMatch) {
+      return cleanText(locationMatch[0]);
+    }
+
+    const cityStateMatch = cleaned.match(/\b[A-Z][A-Za-z .'-]+,\s+[A-Z]{2},\s+USA\b/);
+    return cityStateMatch ? cleanText(cityStateMatch[0]) : '';
+  }
+
+  function extractBuiltInWorkTypeFromText(text) {
+    const match = cleanText(text || '').match(/\b(Remote or Hybrid|Remote|Hybrid|In-Office|On-Site|Onsite)\b/i);
+    return match ? cleanText(match[1]) : '';
+  }
+
+  function extractSalaryFromText(text) {
+    const match = cleanText(text || '').match(/\$[\d,]+(?:\s*-\s*\$?[\d,]+)?(?:\s*(?:Annually|Hourly|Monthly|Yearly))?/i);
+    return match ? cleanText(match[0]) : '';
+  }
+
+  function extractPostedDateFromText(text) {
+    const match = cleanText(text || '').match(/\b(?:Job\s+)?Posted\s+(?:Today|Yesterday|\d+\s+(?:Days?|Hours?|Weeks?|Months?)\s+Ago)\b/i);
+    return match ? cleanText(match[0].replace(/^Job\s+/i, '')) : '';
+  }
+
+  function isGenericBuiltInJobsHeading(text) {
+    const cleaned = cleanText(text || '').toLowerCase();
+    if (/^(?:top|best|recommended|matched)\s+.*\bjobs\b/.test(cleaned)) return true;
+    return new Set([
+      'top tech jobs & startup jobs',
+      'best tech jobs & startup jobs',
+      'jobs at companies',
+      'job matches',
+      'recommended jobs',
+      'matched jobs'
+    ]).has(cleaned);
+  }
+
+  function getBuiltInUrlJobId() {
+    try {
+      const currentUrl = new URL(window.location.href);
+      return currentUrl.searchParams.get('jobid') || (currentUrl.pathname.match(/\/job\/[^/]+\/(\d+)/)?.[1] || '');
+    } catch (e) {
+      return '';
+    }
+  }
+
+  function getObjectPathValue(obj, paths) {
+    for (const path of paths) {
+      let value = obj;
+      for (const key of path.split('.')) {
+        value = value?.[key];
+      }
+      if (!isMissingField(value)) return value;
+    }
+    return '';
+  }
+
+  function stringifyLocationValue(value) {
+    if (!value) return '';
+    if (typeof value === 'string') return cleanText(value);
+    if (Array.isArray(value)) {
+      return value.map(stringifyLocationValue).filter(Boolean).join('; ');
+    }
+
+    const address = value.address || value;
+    return [
+      address.city,
+      address.location,
+      address.addressLocality,
+      address.region,
+      address.state,
+      address.addressRegion,
+      address.country,
+      address.addressCountry
+    ].filter(Boolean).map(cleanText).filter(Boolean).join(', ');
+  }
+
+  function stringifyJobScalar(value) {
+    if (value === null || value === undefined) return '';
+    if (typeof value === 'string' || typeof value === 'number') return cleanText(String(value));
+    if (Array.isArray(value)) return value.map(stringifyJobScalar).filter(Boolean).join(', ');
+    if (typeof value === 'object') {
+      if (value.minValue && value.maxValue) {
+        return `$${Number(value.minValue).toLocaleString()} - $${Number(value.maxValue).toLocaleString()}`;
+      }
+      if (value.value) return stringifyJobScalar(value.value);
+      if (value.name) return stringifyJobScalar(value.name);
+      if (value.label) return stringifyJobScalar(value.label);
+    }
+    return '';
+  }
+
+  function objectContainsValue(obj, expectedValue, depth = 0) {
+    if (!expectedValue || depth > 5 || obj === null || obj === undefined) return false;
+    if (typeof obj === 'string' || typeof obj === 'number') {
+      return String(obj) === String(expectedValue);
+    }
+    if (typeof obj !== 'object') return false;
+
+    return Object.values(obj).some(value => objectContainsValue(value, expectedValue, depth + 1));
+  }
+
+  function isBuiltInJobLikeObject(obj, jobId = '') {
+    if (!obj || typeof obj !== 'object' || Array.isArray(obj)) return false;
+
+    const title = getObjectPathValue(obj, ['title', 'jobTitle', 'name']);
+    const company = getObjectPathValue(obj, [
+      'companyName',
+      'company.name',
+      'hiringOrganization.name',
+      'organization.name',
+      'employer.name'
+    ]);
+    const description = getObjectPathValue(obj, ['description', 'jobDescription', 'body', 'content']);
+    const idMatches = !jobId || objectContainsValue(obj, jobId);
+
+    return idMatches && !isMissingField(title) && (!isMissingField(company) || !isMissingField(description));
+  }
+
+  function findBuiltInJobObjectInValue(value, jobId = '', depth = 0, seen = new Set()) {
+    if (!value || typeof value !== 'object' || depth > 8 || seen.has(value)) return null;
+    seen.add(value);
+
+    if (isBuiltInJobLikeObject(value, jobId)) {
+      return value;
+    }
+
+    const children = Array.isArray(value) ? value : Object.values(value);
+    for (const child of children) {
+      const found = findBuiltInJobObjectInValue(child, jobId, depth + 1, seen);
+      if (found) return found;
+    }
+
+    return null;
+  }
+
+  function parseJsonCandidate(text) {
+    const raw = (text || '').trim();
+    if (!raw || !/^[\[{]/.test(raw)) return null;
+    try {
+      return JSON.parse(raw);
+    } catch (e) {
+      return null;
+    }
+  }
+
+  function extractBuiltinCallData(callName) {
+    const marker = `Builtin.${callName}(`;
+
+    for (const script of document.querySelectorAll('script')) {
+      const text = script.textContent || '';
+      const start = text.indexOf(marker);
+      if (start === -1) continue;
+
+      const jsonStart = text.indexOf('{', start + marker.length);
+      if (jsonStart === -1) continue;
+
+      let depth = 0;
+      let inString = false;
+      let escaped = false;
+
+      for (let i = jsonStart; i < text.length; i += 1) {
+        const ch = text[i];
+
+        if (escaped) {
+          escaped = false;
+          continue;
+        }
+
+        if (ch === '\\') {
+          escaped = inString;
+          continue;
+        }
+
+        if (ch === '"') {
+          inString = !inString;
+          continue;
+        }
+
+        if (inString) continue;
+
+        if (ch === '{') depth += 1;
+        if (ch === '}') depth -= 1;
+
+        if (depth === 0) {
+          try {
+            return JSON.parse(text.slice(jsonStart, i + 1));
+          } catch (e) {
+            break;
+          }
+        }
+      }
+    }
+
+    return null;
+  }
+
+  function jobObjectToBuiltInData(job) {
+    const jobData = createEmptyJobData();
+    if (!job) return jobData;
+
+    const canonicalUrl = stringifyJobScalar(getObjectPathValue(job, ['url', 'canonicalUrl', 'canonicalJobUrl']));
+    if (canonicalUrl) {
+      jobData.url = canonicalUrl;
+    }
+    jobData.title = stringifyJobScalar(getObjectPathValue(job, ['title', 'jobTitle', 'name']));
+    jobData.company = stringifyJobScalar(getObjectPathValue(job, [
+      'companyName',
+      'company.name',
+      'hiringOrganization.name',
+      'organization.name',
+      'employer.name'
+    ]));
+    jobData.location = stringifyLocationValue(getObjectPathValue(job, [
+      'location',
+      'locations',
+      'jobLocation',
+      'address',
+      'primaryLocation',
+      'locationName',
+      'geoLocations'
+    ]));
+    jobData.workType = stringifyJobScalar(getObjectPathValue(job, ['workType', 'workplaceType', 'remoteType', 'workplace']));
+    if (!jobData.workType) {
+      if (job.isRemote && job.isHybrid) jobData.workType = 'Remote or Hybrid';
+      else if (job.isRemote) jobData.workType = 'Remote';
+      else if (job.isHybrid) jobData.workType = 'Hybrid';
+      else if (job.isOnSite) jobData.workType = 'In-Office';
+    }
+    jobData.employmentType = stringifyJobScalar(getObjectPathValue(job, ['employmentType', 'jobType', 'type', 'experienceLevel', 'experience']));
+    jobData.salary = stringifyJobScalar(getObjectPathValue(job, ['salary', 'salaryRange', 'compensation', 'baseSalary']));
+    if (!jobData.salary && (job.salaryMin || job.salaryMax || job.salarySingle)) {
+      const salaryType = job.salaryType ? ` ${String(job.salaryType).replace(/ly$/i, 'ly')}` : '';
+      if (job.salaryMin && job.salaryMax) {
+        jobData.salary = `$${Number(job.salaryMin).toLocaleString()}-$${Number(job.salaryMax).toLocaleString()}${salaryType}`;
+      } else {
+        jobData.salary = `$${Number(job.salarySingle || job.salaryMin || job.salaryMax).toLocaleString()}${salaryType}`;
+      }
+    }
+    jobData.postedDate = stringifyJobScalar(getObjectPathValue(job, ['postedDate', 'datePosted', 'createdAt', 'publishedAt', 'lastUpdated']));
+    if (Number.isFinite(Number(job.applyCount)) && Number(job.applyCount) > 0) {
+      jobData.applicants = `${Number(job.applyCount).toLocaleString()} applicants`;
+    } else if (job.isEarlyApplicant) {
+      jobData.applicants = 'Be an Early Applicant';
+    }
+    jobData.description = cleanBuiltInDescription(stringifyJobScalar(getObjectPathValue(job, ['description', 'jobDescription', 'body', 'content', 'bodySummary'])));
+
+    if (Array.isArray(job.industries)) {
+      jobData.skills = job.industries.map(industry => stringifyJobScalar(industry)).filter(Boolean);
+    } else if (Array.isArray(job.industry)) {
+      jobData.skills = job.industry.map(industry => stringifyJobScalar(industry)).filter(Boolean);
+    }
+
+    return jobData;
+  }
+
+  function extractBuiltInHydratedJobData() {
+    const jobId = getBuiltInUrlJobId();
+    const candidates = [];
+    const matchInitData = extractBuiltinCallData('jobMatchInit');
+
+    if (Array.isArray(matchInitData?.jobs)) {
+      const selectedJob = matchInitData.jobs.find(job => String(job.id) === String(jobId)) || matchInitData.jobs[0];
+      return jobObjectToBuiltInData(selectedJob);
+    }
+
+    for (const script of document.querySelectorAll('script[type="application/json"], script[type="application/ld+json"], script#__NEXT_DATA__')) {
+      const text = script.textContent || '';
+      if (jobId && !text.includes(jobId)) continue;
+      const parsed = parseJsonCandidate(text);
+      if (parsed) candidates.push(parsed);
+    }
+
+    try {
+      for (let i = 0; i < window.localStorage.length; i += 1) {
+        const key = window.localStorage.key(i);
+        const text = window.localStorage.getItem(key) || '';
+        if (!/^[\[{]/.test(text.trim())) continue;
+        if (jobId && !text.includes(jobId)) continue;
+        const parsed = parseJsonCandidate(text);
+        if (parsed) candidates.push(parsed);
+      }
+    } catch (e) {}
+
+    for (const candidate of candidates) {
+      const job = findBuiltInJobObjectInValue(candidate, jobId);
+      if (!job) continue;
+      return jobObjectToBuiltInData(job);
+    }
+
+    return createEmptyJobData();
+  }
+
+  function getBuiltInJobMatchItem() {
+    const jobId = getBuiltInUrlJobId();
+    if (jobId) {
+      const applyLink = document.querySelector(`a[href*="/${CSS.escape(jobId)}"]`);
+      const matchedItem = applyLink?.closest('.job-match-item');
+      if (matchedItem) return matchedItem;
+    }
+
+    return document.querySelector('.job-match-item');
+  }
+
+  function extractBuiltInJobMatchDomData() {
+    const item = getBuiltInJobMatchItem();
+    const jobData = createEmptyJobData();
+    if (!item) return jobData;
+
+    const itemText = item.innerText || '';
+    const description = itemText
+      .replace(/^[\s\S]*?\bThe Role\b/i, 'The Role')
+      .replace(/\bThe Company\b[\s\S]*$/i, '')
+      .trim();
+
+    jobData.title = cleanText(item.querySelector('h3')?.textContent || '');
+    jobData.company = cleanText(item.querySelector('h2.text-pretty-blue, h2')?.textContent || '');
+    jobData.location = extractBuiltInLocationFromText(itemText);
+    jobData.workType = extractBuiltInWorkTypeFromText(itemText);
+    jobData.salary = extractSalaryFromText(itemText);
+    jobData.postedDate = extractPostedDateFromText(itemText);
+    jobData.applicants = extractApplicantsValue(itemText);
+    jobData.description = normalizeSerializedDescription(description);
+
+    const industryText = cleanText(Array.from(item.querySelectorAll('div, p, span'))
+      .map(el => el.textContent || '')
+      .find(text => text.includes('•')) || '');
+    if (industryText) {
+      jobData.skills = industryText.split('•').map(skill => cleanText(skill)).filter(Boolean);
+    }
+
+    return jobData;
+  }
+
+  function extractBuiltInDescriptionFromDom() {
+    const descEl = queryMultipleIn(document, [
+      '.job-description',
+      '.description',
+      '[class*="job-description"]',
+      '[data-testid*="description"]',
+      '[data-testid*="job-description"]',
+      '.job-post-item'
+    ]);
+
+    if (!descEl) return '';
+
+    const text = getDescriptionElementText(descEl);
+    const match = text.match(/\b(?:The Role|About the Role|Job Description|Description|What You(?:'|’)ll Do|Responsibilities)\b[\s\S]*/i);
+    const description = normalizeSerializedDescription(match ? match[0] : text);
+    return description.replace(/\b(?:Similar Jobs|Similar Companies Hiring|Gallery|Sign up now Access later)\b[\s\S]*$/i, '').trim();
+  }
+
+  function extractBuiltInDomJobData() {
+    const jobData = createEmptyJobData();
+    const bodyText = document.body?.innerText || '';
+    const titleCompany = parseTitleCompanyFromDocumentTitle();
+
+    const titleCandidates = [
+      extractBuiltInJobMatchDomData().title,
+      getTextContent('h1.fw-extrabold'),
+      getTextContent('.job-header h1'),
+      getTextContent('[data-testid*="job-title"]'),
+      getTextContent('h1')
+    ].filter(title => title && !isGenericBuiltInJobsHeading(title));
+
+    jobData.title =
+      titleCandidates[0] ||
+      (isLikelyJobTitle(titleCompany.title) ? titleCompany.title : '') ||
+      extractTitleFromMeta(document);
+
+    jobData.company =
+      getTextContent([
+        'a[href*="/company/"] span.fw-medium',
+        'a[href*="/company/"] h2',
+        'a[href*="/company/"]',
+        '.company-name',
+        '.job-post-item h2'
+      ]) ||
+      titleCompany.company;
+
+    jobData.description = extractBuiltInDescriptionFromDom();
+    jobData.location =
+      getTextContent('.attribute-section .font-barlow.text-gray-03') ||
+      extractBuiltInLocationFromText(bodyText);
+    jobData.workType = extractBuiltInWorkTypeFromText(bodyText);
+
+    return jobData;
+  }
+
+  function waitForBuiltInJobDetails(timeout = 5000) {
+    return new Promise((resolve) => {
+      const startTime = Date.now();
+
+      const check = () => {
+        const hasStructuredData = Boolean(extractJsonLd() || extractBuiltinInitData());
+        const hasHydratedJob = !isMissingField(extractBuiltInHydratedJobData().title);
+        const hasVisibleJob = Boolean(queryMultipleIn(document, [
+          '.job-post-item h1',
+          'h1.fw-extrabold',
+          '[data-testid*="job-title"]',
+          '.job-description',
+          '[class*="job-description"]'
+        ]));
+
+        if (hasStructuredData || hasHydratedJob || hasVisibleJob || Date.now() - startTime >= timeout) {
+          resolve(hasStructuredData || hasHydratedJob || hasVisibleJob);
+          return;
+        }
+
+        setTimeout(check, 200);
+      };
+
+      check();
+    });
+  }
+
+  function extractLinkedInStructuredJobData() {
+    const jobData = createEmptyJobData();
+    const jobPosting = extractJsonLd();
+    const titleCompany = parseTitleCompanyFromDocumentTitle();
+    const metaTitle = extractTitleFromMeta(document);
+    const metaDescription = extractMetaContent([
+      'meta[property="og:description"]',
+      'meta[name="twitter:description"]',
+      'meta[name="description"]'
+    ]);
+    const canonicalUrl = extractCanonicalUrl();
+
+    if (jobPosting) {
+      jobData.title = jobPosting.title || '';
+      jobData.company = jobPosting.hiringOrganization?.name || '';
+      jobData.location = extractJobPostingLocation(jobPosting);
+      jobData.employmentType = Array.isArray(jobPosting.employmentType)
+        ? jobPosting.employmentType.join(', ')
+        : (jobPosting.employmentType || '');
+      jobData.postedDate = jobPosting.datePosted || '';
+      jobData.description = cleanBuiltInDescription(jobPosting.description || '');
+      jobData.salary = extractSalaryFromJobPosting(jobPosting);
+
+      if (typeof jobPosting.jobBenefits === 'string') {
+        jobData.benefits = jobPosting.jobBenefits.split(',').map(b => b.trim()).filter(Boolean);
+      } else if (Array.isArray(jobPosting.jobBenefits)) {
+        jobData.benefits = jobPosting.jobBenefits;
+      }
+
+      if (jobPosting.industry) {
+        jobData.skills = Array.isArray(jobPosting.industry) ? jobPosting.industry : [jobPosting.industry];
+      }
+    }
+
+    if (!jobData.title && isLikelyJobTitle(titleCompany.title)) {
+      jobData.title = titleCompany.title;
+    }
+    if (!jobData.title && isLikelyJobTitle(metaTitle)) {
+      jobData.title = metaTitle;
+    }
+    if (!jobData.company) {
+      jobData.company = titleCompany.company || '';
+    }
+    if (!jobData.description && metaDescription.length > 300) {
+      jobData.description = metaDescription;
+    }
+    if (canonicalUrl) {
+      jobData.url = canonicalUrl;
+    }
+
+    return jobData;
+  }
+
+  function extractLinkedInSemanticJobData() {
+    const root = getJobDetailRoot();
+    const jobData = createEmptyJobData();
+    const titleCompany = parseTitleCompanyFromDocumentTitle();
+    const mainText = getMainText(root);
+    const topCardText = getTopCardText(root);
+
+    jobData.title =
+      (isLikelyJobTitle(titleCompany.title) ? titleCompany.title : '') ||
+      extractTitleFromMeta(root) ||
+      extractTitleFromVisibleText(root, titleCompany.title) ||
+      extractTitleFromVisibleText(root) ||
+      '';
+    jobData.company = extractCompanyFromLinks(root) || titleCompany.company || '';
+    const headerStrippedTopCardText = stripKnownJobHeaderText(topCardText, [jobData.company, jobData.title]);
+    const headerStrippedMainText = stripKnownJobHeaderText(mainText, [jobData.company, jobData.title]);
+    jobData.location =
+      extractLocationFromMetaLine(root) ||
+      extractLocationFromSemanticNodes(root) ||
+      extractLocationFromText(headerStrippedTopCardText) ||
+      extractLocationFromText(headerStrippedMainText) ||
+      extractLocationFromText(topCardText) ||
+      extractLocationFromText(mainText);
+    jobData.location = cleanLocationCandidate(jobData.location, [jobData.company, jobData.title]);
+    jobData.workType = extractWorkType();
+    jobData.employmentType = extractEmploymentType();
+    jobData.salary = extractSalary();
+    jobData.postedDate = extractPostedDate();
+    jobData.applicants = extractApplicants();
+    jobData.description = extractDescription();
+    jobData.skills = extractSkills();
+    jobData.benefits = extractBenefits();
+    jobData.companyDescription = getTextContent(SELECTORS.companyDescription);
+
+    return jobData;
+  }
+
+  function extractLinkedInSelectorJobData() {
+    return {
+      ...createEmptyJobData(),
+      title: getTextContent(SELECTORS.jobTitle),
+      company: getTextContent(SELECTORS.companyName),
+      location: getTextContent(SELECTORS.location),
+      workType: extractWorkType(),
+      employmentType: extractEmploymentType(),
+      salary: extractSalary(),
+      postedDate: extractPostedDate(),
+      applicants: extractApplicants(),
+      description: extractDescription(),
+      skills: extractSkills(),
+      benefits: extractBenefits(),
+      companyDescription: getTextContent(SELECTORS.companyDescription),
+      url: extractJobUrl()
+    };
+  }
+
+  function applyLinkedInLegacyFallbacks(jobData) {
+    const detailRoot = getJobDetailRoot();
+    const titleCompanyFromDocTitle = parseTitleCompanyFromDocumentTitle();
+    if (!jobData.title) {
+      jobData.title =
+        extractTitleFromVisibleText(detailRoot, titleCompanyFromDocTitle.title) ||
+        titleCompanyFromDocTitle.title ||
+        extractTitleFromMeta(detailRoot) ||
+        extractTitleFromVisibleText(detailRoot) ||
+        '';
+    }
+
+    if (!isLikelyJobTitle(jobData.title)) {
+      jobData.title =
+        extractTitleFromVisibleText(detailRoot, titleCompanyFromDocTitle.title) ||
+        titleCompanyFromDocTitle.title ||
+        extractTitleFromMeta(detailRoot) ||
+        extractTitleFromVisibleText(detailRoot) ||
+        '';
+    }
+    if (!jobData.company) {
+      jobData.company =
+        extractCompanyFromVisibleText(detailRoot) ||
+        extractCompanyFromLinks(detailRoot) ||
+        titleCompanyFromDocTitle.company ||
+        '';
+    }
+    if (!jobData.location) {
+      const titleCompanyText = parseTitleCompanyFromDocumentTitle();
+      const strippedMainText = stripKnownJobHeaderText(getMainText(detailRoot), [
+        jobData.company,
+        jobData.title,
+        titleCompanyText.company,
+        titleCompanyText.title
+      ]);
+      jobData.location =
+        extractLocationFromMetaLine(detailRoot) ||
+        extractLocationFromSemanticNodes(detailRoot) ||
+        extractLocationFromText(strippedMainText) ||
+        extractLocationFromText(getMainText(detailRoot));
+    }
+    jobData.location = cleanLocationCandidate(jobData.location, [
+      jobData.company,
+      jobData.title,
+      titleCompanyFromDocTitle.company,
+      titleCompanyFromDocTitle.title
+    ]);
+
+    return jobData;
+  }
+
+  async function finalizeLinkedInJobData(jobData) {
+    if (!jobData.title && !jobData.company) {
+      await new Promise(r => setTimeout(r, 500));
+      jobData.title = jobData.title || getTextContent(SELECTORS.jobTitle);
+      jobData.company = jobData.company || getTextContent(SELECTORS.companyName);
+
+      if (!jobData.title && !jobData.company) {
+        return { error: 'incomplete_data', partial: jobData };
+      }
+    }
+
+    return { success: true, data: jobData };
+  }
+
+  async function extractLinkedInJobDataLegacy() {
+    const jobData = applyLinkedInLegacyFallbacks(extractLinkedInSelectorJobData());
+    return finalizeLinkedInJobData(jobData);
+  }
+
+  async function extractLinkedInJobDataRobust() {
+    const jobData = fillMissingJobData(
+      createEmptyJobData(),
+      extractLinkedInStructuredJobData(),
+      extractLinkedInSemanticJobData(),
+      extractLinkedInSelectorJobData()
+    );
+
+    applyLinkedInLegacyFallbacks(jobData);
+    return finalizeLinkedInJobData(jobData);
+  }
+
+  async function validateLinkedInJobPage() {
+    const isJobPage = window.location.href.includes('/jobs/') || window.location.href.includes('linkedin.com/jobs');
+    if (!isJobPage) {
+      return { error: 'not_linkedin_jobs' };
+    }
+
+    const isSearchResults = window.location.href.includes('search-results') || window.location.href.includes('currentJobId=');
+    await waitForJobDetails(isSearchResults ? 5000 : 3000);
+
+    const jobDetail = queryMultipleIn(document, SELECTORS.jobDetailContainer);
+    if (!jobDetail) {
+      const hasCurrentJobId = window.location.href.includes('currentJobId=');
+      const jobsList = document.querySelector('.jobs-search-results-list, .scaffold-layout__list, [class*="jobs-search-results"]');
+      if (jobsList && !hasCurrentJobId) {
+        return { error: 'no_job_selected' };
+      }
+      if (!hasCurrentJobId) {
+        return { error: 'no_job_data' };
+      }
+    }
+
+    return null;
+  }
+
   /**
    * BuiltIn.com specific extraction
    */
   async function extractBuiltInJobData() {
+    await waitForBuiltInJobDetails();
+
     const jobPosting = extractJsonLd();
     const initData = extractBuiltinInitData();
+    const hydratedData = extractBuiltInHydratedJobData();
+    const jobMatchDomData = extractBuiltInJobMatchDomData();
+    const domData = extractBuiltInDomJobData();
     
     const jobData = {
       title: '',
@@ -1116,12 +2125,10 @@
       if (!jobData.title) jobData.title = jobPosting.title || '';
       if (!jobData.company) jobData.company = jobPosting.hiringOrganization?.name || '';
       
-      if (jobPosting.jobLocation?.address) {
-        const addr = jobPosting.jobLocation.address;
-        jobData.location = [addr.addressLocality, addr.addressRegion, addr.addressCountry]
-          .filter(Boolean).join(', ');
-      }
-      jobData.employmentType = jobPosting.employmentType || '';
+      jobData.location = extractJobPostingLocation(jobPosting);
+      jobData.employmentType = Array.isArray(jobPosting.employmentType)
+        ? jobPosting.employmentType.join(', ')
+        : (jobPosting.employmentType || '');
       jobData.postedDate = jobPosting.datePosted || '';
       jobData.description = cleanBuiltInDescription(jobPosting.description || '');
       
@@ -1144,8 +2151,19 @@
       }
     }
 
+    fillMissingJobData(jobData, hydratedData, jobMatchDomData, domData);
+
+    if (isGenericBuiltInJobsHeading(jobData.title) && !jobData.description) {
+      jobData.title = '';
+    }
+
     // Fallback to DOM if JSON-LD/Init missed something
-    if (!jobData.title) jobData.title = getTextContent('h1.fw-extrabold') || getTextContent('.job-header h1');
+    if (!jobData.title) {
+      const fallbackTitle = getTextContent('h1.fw-extrabold') || getTextContent('.job-header h1');
+      if (!isGenericBuiltInJobsHeading(fallbackTitle)) {
+        jobData.title = fallbackTitle;
+      }
+    }
     if (!jobData.company) jobData.company = getTextContent('a[href*="/company/"] span.fw-medium') || getTextContent('.company-name');
     
     if (!jobData.description) {
@@ -1166,6 +2184,10 @@
       }
     }
 
+    if (!jobData.title) {
+      return { error: 'incomplete_data', partial: jobData };
+    }
+
     return { success: true, data: jobData };
   }
 
@@ -1173,7 +2195,7 @@
     if (!html) return '';
     const temp = document.createElement('div');
     temp.innerHTML = html;
-    return temp.innerText.trim();
+    return getDescriptionElementText(temp);
   }
 
   function extractJsonLd() {
@@ -1207,8 +2229,11 @@
    */
   async function extractJobData() {
     const url = window.location.href;
-    const isLinkedIn = url.includes('linkedin.com');
-    const isBuiltIn = url.includes('builtin.com');
+    const hostname = window.location.hostname;
+    const isLinkedIn = hostname === 'linkedin.com' || hostname.endsWith('.linkedin.com');
+    const isBuiltIn = hostname === 'builtin.com' || hostname === 'www.builtin.com';
+
+    await loadSettings();
 
     if (isBuiltIn) {
       return await extractBuiltInJobData();
@@ -1218,94 +2243,16 @@
       return { error: 'not_supported_site' };
     }
 
-    // Check if we're on a job page
-    const isJobPage = url.includes('/jobs/') || url.includes('linkedin.com/jobs');
-    if (!isJobPage) {
-      return { error: 'not_linkedin_jobs' };
+    const validationError = await validateLinkedInJobPage();
+    if (validationError) {
+      return validationError;
     }
 
-    // Wait for content to load — search-results page needs more time for the right panel
-    const isSearchResults = window.location.href.includes('search-results') || window.location.href.includes('currentJobId=');
-    await waitForJobDetails(isSearchResults ? 5000 : 3000);
-
-    // Check for job detail panel
-    const jobDetail = queryMultipleIn(document, SELECTORS.jobDetailContainer);
-    if (!jobDetail) {
-      // Try to detect if we're on a jobs list page without a selected job
-      // But if currentJobId is in the URL, a job IS selected — don't bail out
-      const hasCurrentJobId = window.location.href.includes('currentJobId=');
-      const jobsList = document.querySelector('.jobs-search-results-list, .scaffold-layout__list, [class*="jobs-search-results"]');
-      if (jobsList && !hasCurrentJobId) {
-        return { error: 'no_job_selected' };
-      }
-      if (!hasCurrentJobId) {
-        return { error: 'no_job_data' };
-      }
-      // currentJobId present but container not found yet — content may still be loading
+    if (currentSettings.parserStrategy === 'legacy') {
+      return await extractLinkedInJobDataLegacy();
     }
 
-    // Extract all job data
-    const jobData = {
-      title: getTextContent(SELECTORS.jobTitle),
-      company: getTextContent(SELECTORS.companyName),
-      location: getTextContent(SELECTORS.location),
-      workType: extractWorkType(),
-      employmentType: extractEmploymentType(),
-      salary: extractSalary(),
-      postedDate: extractPostedDate(),
-      applicants: extractApplicants(),
-      description: extractDescription(),
-      skills: extractSkills(),
-      benefits: extractBenefits(),
-      companyDescription: getTextContent(SELECTORS.companyDescription),
-      url: extractJobUrl(),
-      extractedAt: new Date().toISOString()
-    };
-
-    // Fallbacks for LinkedIn's newer jobs UI with obfuscated classes.
-    const detailRoot = getJobDetailRoot();
-    const titleCompanyFromDocTitle = parseTitleCompanyFromDocumentTitle();
-    if (!jobData.title) {
-      jobData.title =
-        extractTitleFromVisibleText(detailRoot, titleCompanyFromDocTitle.title) ||
-        titleCompanyFromDocTitle.title ||
-        extractTitleFromMeta(detailRoot) ||
-        extractTitleFromVisibleText(detailRoot) ||
-        '';
-    }
-
-    if (!isLikelyJobTitle(jobData.title)) {
-      jobData.title =
-        extractTitleFromVisibleText(detailRoot, titleCompanyFromDocTitle.title) ||
-        titleCompanyFromDocTitle.title ||
-        extractTitleFromMeta(detailRoot) ||
-        extractTitleFromVisibleText(detailRoot) ||
-        '';
-    }
-    if (!jobData.company) {
-      jobData.company =
-        extractCompanyFromVisibleText(detailRoot) ||
-        extractCompanyFromLinks(detailRoot) ||
-        titleCompanyFromDocTitle.company ||
-        '';
-    }
-    if (!jobData.location) {
-      jobData.location = extractLocationFromMetaLine(detailRoot) || extractLocationFromText(getMainText(detailRoot));
-    }
-
-    // Validate that we have at least a title or company
-    if (!jobData.title && !jobData.company) {
-      // Try one more time with a slight delay
-      await new Promise(r => setTimeout(r, 500));
-      jobData.title = getTextContent(SELECTORS.jobTitle);
-      jobData.company = getTextContent(SELECTORS.companyName);
-      
-      if (!jobData.title && !jobData.company) {
-        return { error: 'incomplete_data', partial: jobData };
-      }
-    }
-
-    return { success: true, data: jobData };
+    return await extractLinkedInJobDataRobust();
   }
 
   // Listen for messages from the popup

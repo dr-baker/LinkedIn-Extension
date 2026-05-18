@@ -4,7 +4,7 @@
   "version": "1.0.0",
   "description": "Extract job description information from LinkedIn and BuiltIn job pages",
   "permissions": ["activeTab", "scripting", "storage"],
-  "host_permissions": ["https://www.linkedin.com/*", "https://builtin.com/*"],
+  "host_permissions": ["https://www.linkedin.com/*", "https://builtin.com/*", "https://www.builtin.com/*"],
   "action": {
     "default_popup": "popup.html",
     "default_title": "Extract Job Description",
@@ -25,7 +25,8 @@
     {
       "matches": [
         "https://www.linkedin.com/jobs/*",
-        "https://builtin.com/job/*"
+        "https://builtin.com/*",
+        "https://www.builtin.com/*"
       ],
       "js": ["content.js"],
       "css": ["content-styles.css"]

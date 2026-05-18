@@ -67,6 +67,23 @@
         </div>
       </section>
 
+      <section class="settings-section">
+        <h2 class="section-title">Extraction</h2>
+
+        <div class="setting-item setting-item--stacked">
+          <div class="setting-info">
+            <label class="setting-label" for="parser-strategy">Parser strategy</label>
+            <p class="setting-description">
+              Use structured page data, metadata, and semantic text first. Switch back if LinkedIn changes break the newer parser.
+            </p>
+          </div>
+          <select id="parser-strategy" class="select-input">
+            <option value="robust">Data-first semantic parser</option>
+            <option value="legacy">Legacy selector parser</option>
+          </select>
+        </div>
+      </section>
+
       <section class="settings-section" id="save-options-section">
         <h2 class="section-title">Save Options</h2>
         
