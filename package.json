@@ -6,7 +6,8 @@
   "scripts": {
     "build": "make build",
     "auth:linkedin": "node scripts/linkedin-auth-login.mjs",
-    "probe:linkedin": "node scripts/linkedin-dom-probe.mjs"
+    "probe:linkedin": "node scripts/linkedin-dom-probe.mjs",
+    "test:parser": "node scripts/parser-fixture-check.mjs"
   },
   "devDependencies": {
     "playwright": "^1.54.2"

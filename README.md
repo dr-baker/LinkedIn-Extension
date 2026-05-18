@@ -55,6 +55,23 @@ npm run probe:linkedin -- --url "https://www.linkedin.com/jobs/search/" --wait-m
 
 This writes output to `debug/linkedin-dom/<timestamp>/`. Treat `.auth/` and `debug/linkedin-dom/` as sensitive.
 
+### Parser fixture checks
+
+After saving one or more probe snapshots, run the parser against those DOM fixtures:
+
+```bash
+npm run test:parser -- --fixtures debug/linkedin-dom-test --write-actual
+```
+
+Each fixture may include an `expected-export.json` sidecar. When present, the runner compares the extracted fields against it and reports diffs. Without an expected sidecar, it prints the parsed result so you can inspect what would export.
+
+Useful flow:
+
+```bash
+npm run probe:linkedin -- --url "https://www.linkedin.com/jobs/search-results/?currentJobId=4401764934" --wait-ms 8000 --out-dir debug/linkedin-dom-test
+npm run test:parser -- --fixtures debug/linkedin-dom-test --write-actual
+```
+
 ## Notes
 
 - This extension only works on LinkedIn job pages
