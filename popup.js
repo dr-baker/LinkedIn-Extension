@@ -20,7 +20,7 @@
     location: document.getElementById('location'),
     salary: document.getElementById('salary'),
     workType: document.getElementById('work-type'),
-    employmentType: document.getElementById('employment-type'),
+    applicantCount: document.getElementById('applicant-count'),
     postedDate: document.getElementById('posted-date'),
     description: document.getElementById('description'),
     skills: document.getElementById('skills'),
@@ -126,7 +126,6 @@
       ['Location', data.location],
       ['Salary', data.salary],
       ['Work type', data.workType],
-      ['Employment', data.employmentType],
       ['Posted', data.postedDate],
       ['Applicants', data.applicants],
       ['Description', data.description],
@@ -355,7 +354,7 @@
 
     // Applicants in meta line — shown only when present
     if (!isMissing(data.applicants)) {
-      elements.applicants.textContent = `${data.applicants} applicants`;
+      elements.applicants.textContent = data.applicants;
       elements.applicants.classList.remove('hidden');
       elements.applicantsSep.classList.remove('hidden');
     } else {
@@ -363,18 +362,19 @@
       elements.applicantsSep.classList.add('hidden');
     }
 
-    // Company description — shown only when present
+    // Company description — always show section (with missing state if empty)
+    elements.companyDescSection.classList.remove('hidden');
     if (!isMissing(data.companyDescription)) {
       elements.companyDescription.textContent = data.companyDescription;
-      elements.companyDescSection.classList.remove('hidden');
       setSectionStatus(elements.companyDescSection, elements.companyDescStatus, false, '');
     } else {
-      elements.companyDescSection.classList.add('hidden');
+      elements.companyDescription.textContent = '';
+      setSectionStatus(elements.companyDescSection, elements.companyDescStatus, true, '');
     }
 
     setInfoField('[data-field="salary"]', elements.salary, data.salary);
     setInfoField('[data-field="workType"]', elements.workType, data.workType);
-    setInfoField('[data-field="employmentType"]', elements.employmentType, data.employmentType);
+    setInfoField('[data-field="applicants"]', elements.applicantCount, data.applicants);
     setInfoField('[data-field="postedDate"]', elements.postedDate, data.postedDate);
 
     renderDescription(data.description);
@@ -589,7 +589,10 @@
         return;
       }
 
-      const isSupported = tab.url.includes('linkedin.com') || tab.url.includes('builtin.com');
+      const tabUrl = new URL(tab.url);
+      const isLinkedIn = tabUrl.hostname === 'linkedin.com' || tabUrl.hostname.endsWith('.linkedin.com');
+      const isBuiltIn = tabUrl.hostname === 'builtin.com' || tabUrl.hostname === 'www.builtin.com';
+      const isSupported = isLinkedIn || isBuiltIn;
       
       if (!isSupported) {
         showView('notSupported');
@@ -668,6 +671,16 @@
     elements.copyBtn.addEventListener('click', copyToClipboard);
     elements.downloadBtn.addEventListener('click', downloadAsJson);
     elements.refreshBtn.addEventListener('click', extractFromCurrentTab);
+
+    // Collapsible section toggles (event delegation)
+    document.querySelectorAll('.collapsible .section-toggle').forEach(btn => {
+      btn.addEventListener('click', () => {
+        const section = btn.closest('.collapsible');
+        if (!section || section.classList.contains('is-missing')) return;
+        const collapsed = section.getAttribute('data-collapsed') === 'true';
+        section.setAttribute('data-collapsed', collapsed ? 'false' : 'true');
+      });
+    });
   }
 
   /**

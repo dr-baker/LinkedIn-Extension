@@ -101,9 +101,9 @@
             <span class="info-label">Work Type</span>
             <span id="work-type" class="info-value">-</span>
           </div>
-          <div class="info-card" data-field="employmentType">
-            <span class="info-label">Employment</span>
-            <span id="employment-type" class="info-value">-</span>
+          <div class="info-card" data-field="applicants">
+            <span class="info-label">Applicants</span>
+            <span id="applicant-count" class="info-value">-</span>
           </div>
           <div class="info-card" data-field="postedDate">
             <span class="info-label">Posted</span>
@@ -119,28 +119,43 @@
           <div id="description" class="description-content">-</div>
         </section>
 
-        <section class="skills-section" id="skills-section" data-field="skills">
-          <div class="section-head">
-            <h3>Skills</h3>
-            <span class="field-status" id="skills-status"></span>
+        <section class="collapsible skills-section" id="skills-section" data-field="skills" data-collapsed="true">
+          <button type="button" class="section-head section-toggle">
+            <span class="head-left">
+              <h3>Skills</h3>
+              <span class="field-status" id="skills-status"></span>
+            </span>
+            <svg class="chevron" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 9 12 15 18 9"></polyline></svg>
+          </button>
+          <div class="section-body">
+            <div id="skills" class="skills-tags"></div>
           </div>
-          <div id="skills" class="skills-tags"></div>
         </section>
 
-        <section class="benefits-section" id="benefits-section" data-field="benefits">
-          <div class="section-head">
-            <h3>Benefits</h3>
-            <span class="field-status" id="benefits-status"></span>
+        <section class="collapsible benefits-section" id="benefits-section" data-field="benefits" data-collapsed="true">
+          <button type="button" class="section-head section-toggle">
+            <span class="head-left">
+              <h3>Benefits</h3>
+              <span class="field-status" id="benefits-status"></span>
+            </span>
+            <svg class="chevron" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 9 12 15 18 9"></polyline></svg>
+          </button>
+          <div class="section-body">
+            <div id="benefits" class="benefits-list"></div>
           </div>
-          <div id="benefits" class="benefits-list"></div>
         </section>
 
-        <section class="company-desc-section hidden" id="company-desc-section" data-field="companyDescription">
-          <div class="section-head">
-            <h3>About the company</h3>
-            <span class="field-status" id="company-desc-status"></span>
+        <section class="collapsible company-desc-section" id="company-desc-section" data-field="companyDescription" data-collapsed="true">
+          <button type="button" class="section-head section-toggle">
+            <span class="head-left">
+              <h3>About the company</h3>
+              <span class="field-status" id="company-desc-status"></span>
+            </span>
+            <svg class="chevron" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 9 12 15 18 9"></polyline></svg>
+          </button>
+          <div class="section-body">
+            <div id="company-description" class="company-desc-content"></div>
           </div>
-          <div id="company-description" class="company-desc-content"></div>
         </section>
       </div>
 

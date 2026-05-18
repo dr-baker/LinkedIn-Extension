@@ -43,9 +43,9 @@ html, body {
 
 body {
   font-family: 'DM Sans', -apple-system, BlinkMacSystemFont, sans-serif;
-  max-height: 600px;
   display: flex;
   flex-direction: column;
+  max-height: 600px;
   overflow: hidden;
   color: var(--text-1);
   background:
@@ -91,7 +91,6 @@ body {
   flex-direction: column;
   flex: 1 1 auto;
   min-height: 0;
-  overflow: hidden;
 }
 
 /* ---------- Glass primitive ---------- */
@@ -281,9 +280,9 @@ body {
   flex: 1 1 auto;
   min-height: 0;
   padding: 14px 16px 16px;
-  overflow: hidden;
   display: flex;
   flex-direction: column;
+  overflow: hidden;
 }
 
 /* ---------- Empty states ---------- */
@@ -305,11 +304,11 @@ body {
 /* ---------- Job data ---------- */
 .job-data {
   animation: fadeIn .25s ease;
-  flex: 1 1 auto;
-  min-height: 0;
   display: flex;
   flex-direction: column;
   gap: 12px;
+  flex: 1 1 auto;
+  min-height: 0;
 }
 @keyframes fadeIn {
   from { opacity: 0; transform: translateY(4px); }
@@ -414,10 +413,61 @@ body {
   flex: 0 0 auto;
 }
 .description-section {
-  flex: 1 1 auto;
-  min-height: 80px;
   display: flex;
   flex-direction: column;
+  flex: 1 1 auto;
+  min-height: 100px;
+}
+
+/* ---------- Collapsible sections ---------- */
+.collapsible .section-toggle {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 6px 10px;
+  margin: 0;
+  font-family: inherit;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+  color: inherit;
+  transition: background-color .15s ease, border-color .15s ease;
+}
+.collapsible .section-toggle:hover {
+  background: var(--surface-strong);
+  border-color: var(--border-strong);
+}
+.collapsible .head-left {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+}
+.collapsible .chevron {
+  color: var(--text-3);
+  transition: transform .2s ease;
+  flex-shrink: 0;
+}
+.collapsible[data-collapsed="false"] .chevron {
+  transform: rotate(180deg);
+}
+.collapsible .section-body {
+  padding-top: 8px;
+}
+.collapsible[data-collapsed="true"] .section-body,
+.collapsible.is-missing .section-body {
+  display: none;
+}
+/* When missing, make the toggle non-interactive visually (still shows pill) */
+.collapsible.is-missing .section-toggle {
+  cursor: default;
+  background: var(--warn-bg);
+  border-color: var(--warn-border);
+}
+.collapsible.is-missing .chevron {
+  display: none;
 }
 
 .field-status {
